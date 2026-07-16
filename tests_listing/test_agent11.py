@@ -177,15 +177,20 @@ def test_showing_no_show_reply_routes_to_06(tmp_path):
     assert ns and ns[0]["to_agent"] == "06"
 
 
-def test_client_requested_showing_routes_to_06(tmp_path):
+def test_client_requested_showing_routes_to_13_not_directly_to_06(tmp_path):
+    """06 requires buyer_agreement_on_file + requester_identity_verified,
+    which 11 doesn't own (06's own SKILL.md says that flag is 'set by 13').
+    Routes through 13 rather than sending an incomplete request directly."""
     hub = make_hub(str(tmp_path))
     Spoke11ClientCommunication(hub)
     hub.on_turn_start()
     hub.send(client_reply("c-014", {"message": "can I see it Saturday",
                                     "requests_showing": True,
                                     "requested_time": "2026-08-15T10:00"}))
-    req = persisted(hub, "showing.request")
-    assert req and req[0]["to_agent"] == "06"
+    reply = persisted(hub, "lead.reply")
+    assert reply and reply[0]["to_agent"] == "13"
+    assert reply[0]["payload"]["requests_showing"] is True
+    assert not persisted(hub, "showing.request")
 
 
 def test_document_attached_routes_to_08(tmp_path):

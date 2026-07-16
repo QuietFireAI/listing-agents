@@ -248,11 +248,18 @@ class Spoke11ClientCommunication:
                                           payload.get("hour", 12), env=env)
                 return
 
-            # client-requested showing -> route to 06
+            # client-requested showing -> route to 13 (Buyer Search &
+            # Match), NOT directly to 06. 06 requires buyer_agreement_on_
+            # file and requester_identity_verified before scheduling
+            # anything, and 06's own SKILL.md says that flag is "set by
+            # 13" - 11 doesn't own that data and sending an incomplete
+            # showing.request directly would just get bounced by 06's own
+            # required gates. 13 is the legitimate owner and already a
+            # sender of showing.request per routes.json.
             if payload.get("requests_showing"):
-                self.hub.send(_env("11", "06", "showing.request", ctx,
-                                   {"requested_time": payload.get("requested_time"),
-                                    "message": message}))
+                self.hub.send(_env("11", "13", "lead.reply", ctx,
+                                   {"message": message, "requests_showing": True,
+                                    "requested_time": payload.get("requested_time")}))
                 return
 
             # showing-related reply -> route to 06
