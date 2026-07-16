@@ -491,6 +491,15 @@
    "receivers": [
     "18"
    ]
+  },
+  {
+   "intent": "platform.metrics",
+   "senders": [
+    "external"
+   ],
+   "receivers": [
+    "12"
+   ]
   }
  ]
 }
