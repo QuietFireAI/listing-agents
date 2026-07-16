@@ -106,12 +106,28 @@ def test_regulated_late_cancellation_never_auto_rebooked(tmp_path):
     hub = make_hub(str(tmp_path))
     Spoke09VendorCoordination(hub, roster=ROSTER)
     hub.on_turn_start()
+    # ROSTER's insp-1 has no explicit 'regulated' key - must default to
+    # True (cautious), not trust any claim on the event itself.
     hub.send(vendor_event("v-006", {"event_kind": "cancellation",
-                                    "kind": "inspector", "regulated": True}))
+                                    "kind": "inspector", "vendor_id": "insp-1"}))
     clar = persisted(hub, "clarification.request")
     assert any("never auto-rebooked" in c["payload"]["reason"] for c in clar)
     logs = persisted(hub, "interaction.log")
     assert any(l["payload"].get("kind") == "vendor_cancelled_late" for l in logs)
+
+
+def test_explicitly_non_regulated_vendor_skips_human_gate(tmp_path):
+    hub = make_hub(str(tmp_path))
+    roster = dict(ROSTER)
+    roster["stager-1"] = {"kind": "stager", "license_expiry": "2027-01-01",
+                          "insurance_expiry": "2027-01-01", "regulated": False}
+    Spoke09VendorCoordination(hub, roster=roster)
+    hub.on_turn_start()
+    hub.send(vendor_event("v-006b", {"event_kind": "cancellation",
+                                     "kind": "stager", "vendor_id": "stager-1",
+                                     "regulated": True}))  # claim ignored - roster wins
+    clar = persisted(hub, "clarification.request")
+    assert not any("never auto-rebooked" in c["payload"].get("reason", "") for c in clar)
 
 
 def test_rate_change_halts_to_human(tmp_path):
@@ -192,3 +208,26 @@ def test_scope_change_requires_human_approval(tmp_path):
     hub.send(vendor_event("v-014", {"event_kind": "scope_change"}))
     clar = persisted(hub, "clarification.request")
     assert any("human-approved" in c["payload"]["reason"] for c in clar)
+
+
+def test_REGRESSION_non_critical_no_show_still_logged_not_silent(tmp_path):
+    """Previously: a non-critical no-show did nothing at all - no log, no
+    escalation, silently dropped. Now logs even when not deadline-critical."""
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    hub.on_turn_start()
+    hub.send(vendor_event("v-015", {"event_kind": "no_show",
+                                    "deadline_critical": False}))
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("kind") == "vendor_no_show" for l in logs)
+
+
+def test_REGRESSION_missing_deadline_critical_fails_closed(tmp_path):
+    """Unspecified criticality must default to treated-as-critical, not
+    dismissed as non-critical."""
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    hub.on_turn_start()
+    hub.send(vendor_event("v-016", {"event_kind": "no_show"}))  # no flag at all
+    clar = persisted(hub, "clarification.request")
+    assert any("never self-substituted" in c["payload"]["reason"] for c in clar)

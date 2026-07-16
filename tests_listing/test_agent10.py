@@ -19,6 +19,7 @@ def make_hub(tmp_path, **kw):
 
 
 def data_req(ctx, payload, frm="03"):
+    payload = {"license_scope": "internal", **payload}
     return Envelope(from_agent=frm, to_agent="10", intent="data.request",
                     client_context_id=ctx, payload=payload,
                     provenance={"source": f"spoke-{frm}", "captured_at": "runtime",
@@ -139,3 +140,21 @@ def test_neighborhood_package_never_characterizes(tmp_path):
     assert "crime_index" in pkg["dropped_no_provenance"]
     # structural: no key anywhere resembling a characterization/opinion field
     assert "characterization" not in pkg and "opinion" not in pkg and "recommendation" not in pkg
+
+
+def test_REGRESSION_missing_license_scope_fails_closed_to_human(tmp_path):
+    """The actual bug: license_scope defaulted to 'internal' (permissive)
+    when unspecified, so the gate was trivially skipped by omission. Must
+    now default to routing to human when the field is simply absent."""
+    hub = make_hub(str(tmp_path))
+    Spoke10MarketData(hub, comp_minimum=1)
+    hub.on_turn_start()
+    env = Envelope(from_agent="03", to_agent="10", intent="data.request",
+                  client_context_id="m-010",
+                  payload={"mode": "comp", "comps": [], "today": "2026-07-15"},
+                  provenance={"source": "spoke-03", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    pkgs = persisted(hub, "data.package")
+    assert pkgs[0]["to_agent"] == "human", \
+        "omitted license_scope must fail closed to human, not default to internal"

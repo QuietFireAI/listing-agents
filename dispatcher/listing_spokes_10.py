@@ -89,9 +89,13 @@ class Spoke10MarketData:
             substitution_smell = any(w in message for w in
                                      _APPRAISAL_SUBSTITUTION_WORDS)
 
-            # tuple 5: license limits recipient -> human only + note
-            license_scope = payload.get("license_scope", "internal")
-            if license_scope == "external" and requester != "human":
+            # tuple 5: license limits recipient -> human only + note.
+            # Fail closed: unspecified/unknown scope is treated the same
+            # as external (gated to human), not assumed internal - the
+            # original version defaulted to "internal", meaning the gate
+            # was trivially skipped by anyone who simply omitted the field.
+            license_scope = payload.get("license_scope", "external")
+            if license_scope != "internal" and requester != "human":
                 self.hub.send(_env("10", "human", "data.package", ctx,
                                    {"note": f"requested by {requester!r}, "
                                            f"but external distribution of "

@@ -139,7 +139,12 @@ class Spoke09VendorCoordination:
 
         if env.intent == "vendor.event" and payload.get("event_kind") == "cancellation":
             kind = payload.get("kind")
-            regulated = payload.get("regulated", False)
+            vendor_id = payload.get("vendor_id")
+            # Derive from OWNED roster state, not the incoming event's own
+            # claim - 09 already knows which roles are regulated; trusting
+            # a self-reported flag on the cancellation event itself is the
+            # same class of bug as trusting an echoed doc_type in Agent 08.
+            regulated = self.roster.get(vendor_id, {}).get("regulated", True)
             # 09 isn't a legal sender of deadline.alert (only 07 is, per
             # routes.json) - notify via interaction.log to 14 instead. 07
             # learns about the resulting stall through its own
@@ -237,7 +242,9 @@ class Spoke09VendorCoordination:
             return
 
         if env.intent == "vendor.event" and payload.get("event_kind") == "no_show":
-            deadline_critical = payload.get("deadline_critical", False)
+            # Fail closed: unknown criticality is treated as critical, not
+            # dismissed - same reasoning as the other two fixes here.
+            deadline_critical = payload.get("deadline_critical", True)
             if deadline_critical:
                 # tuple 10: escalate + offer next approved vendor to human,
                 # never self-substitute
@@ -246,6 +253,10 @@ class Spoke09VendorCoordination:
                                              "deadline-critical job - human "
                                              "picks the next approved "
                                              "vendor, never self-substituted"}))
+            else:
+                self.hub.send(_env("09", "14", "interaction.log", ctx,
+                                   {"kind": "vendor_no_show",
+                                    "deadline_critical": False}))
             return
 
         if env.intent == "vendor.event" and payload.get("event_kind") == "scope_change":

@@ -131,7 +131,7 @@ def test_unsigned_where_signature_expected_stays_incomplete(tmp_path):
     hub, _ = make_hub(str(tmp_path))
     Spoke08DocumentCollection(hub)
     hub.on_turn_start()
-    hub.send(doc_submission("d-007", {"doc_type": "amendment",
+    hub.send(doc_submission("d-007", {"doc_type": "amendment", "opens_correctly": True,
                                       "signature_expected": True, "signed": False}))
     status = persisted(hub, "doc.status")
     assert status[0]["payload"]["status"] == "incomplete"
@@ -141,10 +141,10 @@ def test_conflicting_versions_keeps_both_never_picks(tmp_path):
     hub, _ = make_hub(str(tmp_path))
     spoke = Spoke08DocumentCollection(hub)
     hub.on_turn_start()
-    hub.send(doc_submission("d-008", {"doc_type": "title_commitment",
+    hub.send(doc_submission("d-008", {"doc_type": "title_commitment", "opens_correctly": True,
                                       "version_conflict_key": "v1",
                                       "content_hash": "hash-a"}))
-    hub.send(doc_submission("d-008", {"doc_type": "title_commitment",
+    hub.send(doc_submission("d-008", {"doc_type": "title_commitment", "opens_correctly": True,
                                       "version_conflict_key": "v1",
                                       "content_hash": "hash-b"}))
     assert len(spoke.filed_documents["d-008"]) == 2
@@ -236,3 +236,41 @@ def test_INTEGRATION_title_exception_reaches_07_verbatim(tmp_path):
                                       "exception_text": "easement dispute filed 2021"}))
     assert any("easement dispute filed 2021" in e["trigger"]
               for e in hub.queues["escalation.legal_line"])
+
+
+def test_REGRESSION_missing_opens_correctly_fails_closed_to_unreadable(tmp_path):
+    """The actual bug: opens_correctly defaulted to True (assumed readable)
+    when unspecified. Must now default to treating it as unreadable."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke08DocumentCollection(hub)
+    hub.on_turn_start()
+    hub.send(doc_submission("d-012", {"doc_type": "preapproval_letter",
+                                      "content_hash": "xyz"}))  # no opens_correctly at all
+    assert "d-012" not in spoke.filed_documents
+    msgs = persisted(hub, "client.message.request")
+    assert any(m["payload"].get("template") == "document_unreadable_resend"
+              for m in msgs)
+
+
+def test_REGRESSION_missing_receipt_confirmed_fails_closed(tmp_path):
+    """Doctrine: 'money milestones never get benefit of the doubt.'
+    Defaulting receipt_confirmed to True did exactly that when omitted."""
+    hub, _ = make_hub(str(tmp_path))
+    Spoke08DocumentCollection(hub)
+    hub.on_turn_start()
+    hub.send(doc_submission("d-013", {"doc_type": "earnest_money_receipt",
+                                      "opens_correctly": True,
+                                      "content_hash": "em-1"}))  # field omitted
+    status = persisted(hub, "doc.status")
+    assert status[-1]["payload"]["receipt_confirmed"] is False
+
+
+def test_REGRESSION_missing_repair_requests_present_fails_closed(tmp_path):
+    hub, _ = make_hub(str(tmp_path))
+    Spoke08DocumentCollection(hub)
+    hub.on_turn_start()
+    hub.send(doc_submission("d-014", {"doc_type": "inspection_report",
+                                      "opens_correctly": True,
+                                      "content_hash": "insp-2"}))  # field omitted
+    status = persisted(hub, "doc.status")
+    assert status[-1]["payload"]["repair_requests_present"] is True

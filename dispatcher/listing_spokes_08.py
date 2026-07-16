@@ -249,8 +249,11 @@ class Spoke08DocumentCollection:
                 result="rejected: wrong_type")
             return
 
-        # tuple 2: unreadable -> request re-send, log raw error
-        if not payload.get("opens_correctly", True):
+        # tuple 2: unreadable -> request re-send, log raw error.
+        # Fail closed: absence of this flag means UNKNOWN readability, not
+        # an assumption that it opens fine - defaulting to True let a
+        # submission skip the readability check just by omitting the field.
+        if not payload.get("opens_correctly", False):
             self.hub.send(_env("08", "11", "client.message.request", ctx,
                                {"template": "document_unreadable_resend",
                                 "doc_type": doc_type}))
@@ -308,7 +311,7 @@ class Spoke08DocumentCollection:
         if doc_type == "inspection_report":
             status_payload["report_received"] = True
             status_payload["repair_requests_present"] = \
-                payload.get("repair_requests_present", False)
+                payload.get("repair_requests_present", True)
         if doc_type == "appraisal_report":
             status_payload["appraised_value"] = payload.get("appraised_value")
             status_payload["contract_price"] = payload.get("contract_price")
@@ -316,7 +319,10 @@ class Spoke08DocumentCollection:
             status_payload["exception_found"] = True
             status_payload["exception_text"] = payload.get("exception_text")
         if doc_type == "earnest_money_receipt":
-            status_payload["receipt_confirmed"] = payload.get("receipt_confirmed", True)
+            # Fail closed: doctrine says "money milestones never get
+            # benefit of the doubt" - defaulting to True did exactly that
+            # when the field was simply omitted.
+            status_payload["receipt_confirmed"] = payload.get("receipt_confirmed", False)
 
         self.hub.send(_env("08", "07", "doc.status", ctx, status_payload,
                            confidence=SOURCE_VERIFIED,
