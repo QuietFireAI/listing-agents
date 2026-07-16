@@ -454,6 +454,15 @@
    "receivers": [
     "09"
    ]
+  },
+  {
+   "intent": "compliance.notice",
+   "senders": [
+    "10"
+   ],
+   "receivers": [
+    "17"
+   ]
   }
  ]
 }
