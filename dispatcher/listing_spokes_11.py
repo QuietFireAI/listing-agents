@@ -67,6 +67,7 @@ class Spoke11ClientCommunication:
         self.quiet_hours = quiet_hours  # (start_hour, end_hour), wraps midnight
         self.exempt_alert_classes = exempt_alert_classes or set()
         self.pending_conflict: dict[str, list] = {}  # ctx -> conflicting statuses
+        self.pending_showing_requests: dict[str, dict] = {}  # ctx -> held request
         hub.register("11", self.handle)
 
     def _in_quiet_hours(self, hour: int) -> bool:
@@ -248,18 +249,16 @@ class Spoke11ClientCommunication:
                                           payload.get("hour", 12), env=env)
                 return
 
-            # client-requested showing -> route to 13 (Buyer Search &
-            # Match), NOT directly to 06. 06 requires buyer_agreement_on_
-            # file and requester_identity_verified before scheduling
-            # anything, and 06's own SKILL.md says that flag is "set by
-            # 13" - 11 doesn't own that data and sending an incomplete
-            # showing.request directly would just get bounced by 06's own
-            # required gates. 13 is the legitimate owner and already a
-            # sender of showing.request per routes.json.
+            # client-requested showing -> query 14 for the facts 06
+            # requires (buyer_agreement_on_file, requester_identity_
+            # verified - 14 is system of record for these, same pattern as
+            # consent), then send a genuinely complete showing.request
+            # directly to 06 - using 11's own documented edge for real,
+            # not routing around the problem.
             if payload.get("requests_showing"):
-                self.hub.send(_env("11", "13", "lead.reply", ctx,
-                                   {"message": message, "requests_showing": True,
-                                    "requested_time": payload.get("requested_time")}))
+                self.pending_showing_requests[ctx] = {
+                    "requested_time": payload.get("requested_time")}
+                self.hub.send(_env("11", "14", "record.request", ctx, {}))
                 return
 
             # showing-related reply -> route to 06
@@ -300,5 +299,22 @@ class Spoke11ClientCommunication:
             return
 
         if env.intent == "record.response":
-            # consent/opt-out check result from 14
+            pending = self.pending_showing_requests.pop(ctx, None)
+            if pending is None:
+                return  # a consent-check lookup unrelated to a showing request
+            buyer_agreement = payload.get("buyer_agreement_on_file", False)
+            identity_verified = payload.get("requester_identity_verified", False)
+            if not buyer_agreement:
+                # 14 doesn't have this on file - not 11's call to schedule
+                # around it; route to 13 (which owns getting it signed)
+                # rather than send an incomplete request 06 would bounce.
+                self.hub.send(_env("11", "13", "lead.reply", ctx,
+                                   {"reason": "showing requested, no buyer "
+                                             "agreement on file yet",
+                                    "requested_time": pending["requested_time"]}))
+                return
+            self.hub.send(_env("11", "06", "showing.request", ctx,
+                               {"requested_time": pending["requested_time"],
+                                "buyer_agreement_on_file": buyer_agreement,
+                                "requester_identity_verified": identity_verified}))
             return

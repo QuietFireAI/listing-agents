@@ -8,6 +8,7 @@ sys.path.insert(0, "/home/claude/pillars_pth")
 from dispatcher.core import Envelope, Routes, AuditLog
 from dispatcher.hub import Hub
 from dispatcher.listing_spokes_11 import Spoke11ClientCommunication
+from dispatcher.listing_spokes import Spoke14CRMPipeline
 
 IDENTITY_ROUTES = os.path.join(os.path.dirname(__file__), "..", "identity",
                                "routes.json")
@@ -177,19 +178,51 @@ def test_showing_no_show_reply_routes_to_06(tmp_path):
     assert ns and ns[0]["to_agent"] == "06"
 
 
-def test_client_requested_showing_routes_to_13_not_directly_to_06(tmp_path):
-    """06 requires buyer_agreement_on_file + requester_identity_verified,
-    which 11 doesn't own (06's own SKILL.md says that flag is 'set by 13').
-    Routes through 13 rather than sending an incomplete request directly."""
+def test_client_requested_showing_queries_14_first(tmp_path):
     hub = make_hub(str(tmp_path))
     Spoke11ClientCommunication(hub)
     hub.on_turn_start()
     hub.send(client_reply("c-014", {"message": "can I see it Saturday",
                                     "requests_showing": True,
                                     "requested_time": "2026-08-15T10:00"}))
+    req = persisted(hub, "record.request")
+    assert req and req[0]["to_agent"] == "14"
+    # not sent yet - waiting on the record.response round trip
+    assert not persisted(hub, "showing.request")
+
+
+def test_showing_request_completes_with_real_facts_when_confirmed_on_file(tmp_path):
+    """The actual fix: 11 now queries 14 (system of record for these
+    facts, same pattern as consent) and sends a genuinely complete
+    showing.request using 11's own real edge, rather than routing around
+    the problem or sending an incomplete request 06 would bounce."""
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+    crm.buyer_agreement["c-015"] = True
+    crm.identity_verified["c-015"] = True
+
+    hub.send(client_reply("c-015", {"message": "can I see it Saturday",
+                                    "requests_showing": True,
+                                    "requested_time": "2026-08-15T10:00"}))
+    req = persisted(hub, "showing.request")
+    assert req and req[0]["to_agent"] == "06"
+    assert req[0]["payload"]["buyer_agreement_on_file"] is True
+    assert req[0]["payload"]["requester_identity_verified"] is True
+
+
+def test_showing_request_routes_to_13_when_no_agreement_on_file(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)  # buyer_agreement defaults to False - nothing on file
+    Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+
+    hub.send(client_reply("c-016", {"message": "can I see it Saturday",
+                                    "requests_showing": True,
+                                    "requested_time": "2026-08-15T10:00"}))
     reply = persisted(hub, "lead.reply")
     assert reply and reply[0]["to_agent"] == "13"
-    assert reply[0]["payload"]["requests_showing"] is True
     assert not persisted(hub, "showing.request")
 
 

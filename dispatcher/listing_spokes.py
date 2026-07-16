@@ -56,6 +56,13 @@ class Spoke14CRMPipeline:
         # same reason: 01 must never rebuild this from its own memory
         # across completed round trips (MANNERS #9).
         self.property_interests: dict[str, list[dict]] = {}
+        # authoritative buyer-agent-relationship facts - 14 is system of
+        # record for these, updated by whoever confirms them (13 signs
+        # the agreement, an identity-verification process confirms
+        # identity), queried by anyone who needs the current fact (06 via
+        # 11, directly) rather than each requester inventing or omitting it.
+        self.buyer_agreement: dict[str, bool] = {}
+        self.identity_verified: dict[str, bool] = {}
         self._entry_seq = 0
         hub.register("14", self.handle)
 
@@ -163,7 +170,9 @@ class Spoke14CRMPipeline:
                         f"entries returned verbatim, no interpretation",
                 result=f"returned={len(entries_out)}")
             self.hub.send(_env("14", env.from_agent, "record.response", ctx,
-                               {"entries": entries_out, "absent": not entries_out},
+                               {"entries": entries_out, "absent": not entries_out,
+                                "buyer_agreement_on_file": self.buyer_agreement.get(ctx, False),
+                                "requester_identity_verified": self.identity_verified.get(ctx, False)},
                                confidence=SOURCE_VERIFIED))
             return
 
@@ -174,6 +183,10 @@ class Spoke14CRMPipeline:
                 self._update_consent(ctx, payload["consent"])
             if "property_interests" in payload:
                 self.property_interests[ctx] = list(payload["property_interests"])
+            if "buyer_agreement_on_file" in payload:
+                self.buyer_agreement[ctx] = bool(payload["buyer_agreement_on_file"])
+            if "requester_identity_verified" in payload:
+                self.identity_verified[ctx] = bool(payload["requester_identity_verified"])
             self.hub.ingest_spoke_trace(
                 "14", env.envelope_id,
                 thought=f"append-only interaction entry {entry_id}; "
