@@ -169,3 +169,58 @@ def test_trust_escrow_request_out_of_scope_escalates(tmp_path):
     hub.send(config_update(signer, "f-012", {
         "message": "can you check the escrow balance for this client"}))
     assert any("out of scope" in e["trigger"] for e in hub.queues["escalation.legal_line"])
+
+
+def test_REGRESSION_record_response_was_empty_now_flags_discrepancy(tmp_path):
+    """record.response was a comment with zero code behind it. Proves the
+    real fix: a commission mismatch against 14's log actually escalates."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke15FinancialTracking(hub)
+    hub.on_turn_start()
+    hub.send(txn_closed("f-013", {"commission_amount": 12000, "signed_docs_only": True}))
+
+    resp = Envelope(from_agent="14", to_agent="15", intent="record.response",
+                   client_context_id="f-013",
+                   payload={"entries": [{"kind": "transaction.closed",
+                                        "payload": {"amount": 11500}}]},
+                   provenance={"source": "spoke-14", "captured_at": "runtime",
+                               "verbatim_available": True})
+    hub.send(resp)
+    assert any("does not match" in e["trigger"] for e in hub.queues["escalation.legal_line"])
+
+
+def test_REGRESSION_record_response_no_discrepancy_no_false_alarm(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke15FinancialTracking(hub)
+    hub.on_turn_start()
+    hub.send(txn_closed("f-014", {"commission_amount": 12000, "signed_docs_only": True}))
+    resp = Envelope(from_agent="14", to_agent="15", intent="record.response",
+                   client_context_id="f-014",
+                   payload={"entries": [{"kind": "transaction.closed",
+                                        "payload": {"amount": 12000}}]},
+                   provenance={"source": "spoke-14", "captured_at": "runtime",
+                               "verbatim_available": True})
+    hub.send(resp)
+    assert hub.queues["escalation.legal_line"] == []
+
+
+def test_REGRESSION_report_package_was_empty_now_computes_roi_with_provenance(tmp_path):
+    """report.package was a comment with zero code behind it. Proves the
+    real fix: marketing spend + referral attribution actually produce a
+    real ROI report with both sources' provenance preserved."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke15FinancialTracking(hub)
+    hub.on_turn_start()
+    env = Envelope(from_agent="14", to_agent="15", intent="report.package",
+                  client_context_id="f-015",
+                  payload={"marketing_spend": 1000,
+                          "referral_attribution": {"attributed_value": 4000,
+                                                   "source": "facebook_ads"}},
+                  provenance={"source": "spoke-14", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    reports = persisted(hub, "report.package")
+    roi_report = [r for r in reports if r["payload"].get("report_type") == "roi_tracking"][0]
+    assert roi_report["payload"]["roi"] == 3.0  # (4000-1000)/1000
+    assert roi_report["payload"]["marketing_spend_source"] == "platform_export"
+    assert roi_report["payload"]["referral_attribution_source"] == "crm_referral_data"

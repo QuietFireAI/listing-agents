@@ -249,3 +249,56 @@ def test_compliance_wait_status_pushed_and_cleared_on_approval(tmp_path):
     hub.send(verdict)
     statuses = persisted(hub, "agent.status")
     assert any(s["payload"].get("resolved") for s in statuses)
+
+
+def test_REGRESSION_frequency_cap_actually_enforced_now(tmp_path):
+    """touch_log was declared but never read or written anywhere -
+    frequency_cap_per_week only ever decreased on complaint, nothing ever
+    checked touches sent against it. Proves real enforcement now."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub, frequency_cap_per_week=2)
+    hub.on_turn_start()
+    ctx = "touch-001"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+
+    r1 = spoke.send_scheduled_touch(ctx, {"body": "touch 1"}, "2026-W32")
+    r2 = spoke.send_scheduled_touch(ctx, {"body": "touch 2"}, "2026-W32")
+    r3 = spoke.send_scheduled_touch(ctx, {"body": "touch 3"}, "2026-W32")
+    assert [r1, r2, r3] == ["sent", "sent", "held_frequency_cap"]
+
+    sends = persisted(hub, "client.message.request")
+    touches = [s for s in sends if s["payload"].get("template") == "sequence_touch"]
+    assert len(touches) == 2  # never a third in the same week
+
+
+def test_REGRESSION_frequency_cap_resets_next_week(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub, frequency_cap_per_week=1)
+    hub.on_turn_start()
+    ctx = "touch-002"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+    r1 = spoke.send_scheduled_touch(ctx, {"body": "w32"}, "2026-W32")
+    r2 = spoke.send_scheduled_touch(ctx, {"body": "w33"}, "2026-W33")
+    assert [r1, r2] == ["sent", "sent"]
+
+
+def test_REGRESSION_touch_never_sent_for_uncleared_sequence(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub)
+    hub.on_turn_start()
+    ctx = "touch-003"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    # never approved - still pending
+    result = spoke.send_scheduled_touch(ctx, {"body": "x"}, "2026-W32")
+    assert result == "not_eligible"
+    assert not persisted(hub, "client.message.request")

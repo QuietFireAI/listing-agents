@@ -82,14 +82,50 @@ class Spoke15FinancialTracking:
             return
 
         if env.intent == "record.response":
-            # correlate to whatever was requested; contents used for
-            # cross-checking commission/expense records against 14's log
+            # Cross-check the commission this agent computed against 14's
+            # actual log entries - was a comment describing this with zero
+            # code behind it. A discrepancy here is exactly the class of
+            # thing tuple 1 exists to catch, just sourced from the
+            # system-of-record instead of a human-reported dispute.
+            commission = self.commissions.get(ctx)
+            entries = payload.get("entries", [])
+            if commission is None or not entries:
+                return
+            logged_amounts = [e["payload"].get("amount") for e in entries
+                             if e.get("kind") == "transaction.closed"
+                             and e["payload"].get("amount") is not None]
+            if logged_amounts and commission["amount"] not in logged_amounts:
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"commission recorded here "
+                                             f"({commission['amount']}) "
+                                             f"does not match 14's logged "
+                                             f"amount(s) {logged_amounts} - "
+                                             f"discrepancy, not silently "
+                                             f"reconciled",
+                                   "agent": "15"})
             return
 
         if env.intent == "report.package":
-            # requested records (milestones, referral attribution,
-            # marketing spend) arriving in reply to this agent's own
-            # record.request - consumed for ROI/expense building
+            # Marketing spend (platform, source_verified) + referral
+            # attribution (CRM, stated_by_party) - both need provenance
+            # preserved separately, per job component #2's explicit
+            # requirement. Was a comment with zero code behind it.
+            spend = payload.get("marketing_spend")
+            attribution = payload.get("referral_attribution")
+            if spend is None and attribution is None:
+                return
+            roi = None
+            if spend is not None and attribution is not None:
+                attributed_value = attribution.get("attributed_value", 0)
+                roi = (attributed_value - spend) / spend if spend else None
+            self.hub.send(_env("15", "human", "report.package", ctx,
+                               {"report_type": "roi_tracking",
+                                "marketing_spend": spend,
+                                "marketing_spend_source": "platform_export",
+                                "referral_attribution": attribution,
+                                "referral_attribution_source": "crm_referral_data",
+                                "roi": roi}))
             return
 
         if env.intent == "config.update":

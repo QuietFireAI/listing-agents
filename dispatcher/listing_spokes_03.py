@@ -79,6 +79,35 @@ class Spoke03LeadNurture:
                            {"purpose": "market_update"}))
         return True
 
+    def send_scheduled_touch(self, ctx: str, content: dict, today_week: str):
+        """Actually delivers the next scheduled touch, enforcing the
+        frequency cap for real. Previously: touch_log was declared but
+        never read or written anywhere, and frequency_cap_per_week only
+        ever decreased on a complaint - nothing checked touches sent this
+        week against the cap before sending, meaning the whole mechanism
+        was decorative. Fixed: real enforcement, using the log that was
+        already sitting there unused."""
+        seq = self.active_sequences.get(ctx)
+        if not seq or seq.get("compliance_status") != "cleared" or seq.get("paused"):
+            return "not_eligible"
+
+        weeks_log = self.touch_log.setdefault(ctx, [])
+        this_week_count = sum(1 for w in weeks_log if w == today_week)
+        if this_week_count >= self.frequency_cap_per_week:
+            self.hub.ingest_spoke_trace(
+                "03", "internal",
+                thought=f"ctx={ctx!r} already at {this_week_count}/"
+                        f"{self.frequency_cap_per_week} touches for week "
+                        f"{today_week!r} - holding, cap enforced for real",
+                result="held: frequency_cap")
+            return "held_frequency_cap"
+
+        weeks_log.append(today_week)
+        seq["touch_count"] = seq.get("touch_count", 0) + 1
+        self.hub.send(_env("03", "11", "client.message.request", ctx,
+                           {"template": "sequence_touch", "content": content}))
+        return "sent"
+
     def handle(self, env: Envelope):
         ctx = env.client_context_id
 
