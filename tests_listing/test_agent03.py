@@ -232,3 +232,20 @@ def test_substantive_question_routes_to_11_for_gated_human_reply(tmp_path):
     assert result["status"] == "ack"
     routed = persisted(hub, "client.message.request")
     assert routed and routed[0]["to_agent"] == "11"
+
+
+def test_compliance_wait_status_pushed_and_cleared_on_approval(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke03LeadNurture(hub)
+    hub.on_turn_start()
+    hub.send(nurture_env("n-020", {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    status = persisted(hub, "agent.status")
+    assert status and status[0]["payload"]["waiting_on"] == "compliance_review"
+
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id="n-020", payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+    statuses = persisted(hub, "agent.status")
+    assert any(s["payload"].get("resolved") for s in statuses)

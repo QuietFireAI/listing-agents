@@ -222,3 +222,46 @@ def test_tier_oscillation_third_time_flags_human_review(tmp_path):
     # HOT opened an escalation, so the next rescore holds rather than
     # re-tiering - confirms tuple #11 takes precedence over oscillation
     # detection, which only evaluates on tiers that actually got assigned.
+
+
+def test_hot_lead_escalation_never_resolved_before_this_fix(tmp_path):
+    """Real bug found during the agent.status retrofit: nothing anywhere
+    cleared open_escalations - a HOT lead permanently blocked rescoring
+    for that context forever. Proves the fix."""
+    hub, signer = make_hub(str(tmp_path))
+    q = Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    ctx = "hot-001"
+    hub.send(lead(ctx, {"demands_human": True}))
+    assert ctx in q.open_escalations
+
+    resolve = Envelope(from_agent="human", to_agent="02", intent="config.update",
+                      client_context_id=ctx, payload={"resolve_hot_lead": ctx},
+                      provenance={"source": "human", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    signer.sign(resolve)
+    hub.send(resolve)
+    assert ctx not in q.open_escalations
+
+    # rescoring must now actually work again, not hold forever
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+    rescore = Envelope(from_agent="03", to_agent="02", intent="lead.rescored",
+                      client_context_id=ctx, payload={"budget": 900_000,
+                                                      "timeline_days": 10,
+                                                      "financing_progress": "preapproved"},
+                      provenance={"source": "spoke-03", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(rescore)
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("tier") == "HOT" for l in logs), \
+        "rescoring should work now that the escalation is resolved"
+
+
+def test_hot_lead_status_pushed_to_18(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    hub.send(lead("hot-002", {"demands_human": True, "today": "2026-08-01"}))
+    status = persisted(hub, "agent.status")
+    assert status and status[0]["to_agent"] == "18"
+    assert status[0]["payload"]["waiting_on"] == "hot_lead_human_response"

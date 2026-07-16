@@ -68,6 +68,7 @@ class Spoke11ClientCommunication:
         self.exempt_alert_classes = exempt_alert_classes or set()
         self.pending_conflict: dict[str, list] = {}  # ctx -> conflicting statuses
         self.pending_showing_requests: dict[str, dict] = {}  # ctx -> held request
+        self.awaiting_human_response: dict[str, bool] = {}  # ctx -> escalated, awaiting human
         hub.register("11", self.handle)
 
     def _in_quiet_hours(self, hour: int) -> bool:
@@ -134,6 +135,15 @@ class Spoke11ClientCommunication:
     def handle(self, env: Envelope):
         ctx = env.client_context_id
         payload = env.payload
+
+        if env.intent == "config.update":
+            resolved_ctx = payload.get("resolve_advice_response")
+            if resolved_ctx:
+                self.awaiting_human_response.pop(resolved_ctx, None)
+                self.hub.send(_env("11", "18", "agent.status", resolved_ctx,
+                                   {"waiting_on": "human_advice_response",
+                                    "resolved": True}))
+            return
 
         if env.intent in ("status.update", "deadline.alert", "client.message.request"):
             hour = payload.get("hour", 12)
@@ -211,6 +221,10 @@ class Spoke11ClientCommunication:
                 self.hub.escalate("escalation.legal_line",
                                   {"client_context_id": ctx,
                                    "trigger": advice_hit, "agent": "11"})
+                self.awaiting_human_response[ctx] = True
+                self.hub.send(_env("11", "18", "agent.status", ctx,
+                                   {"waiting_on": "human_advice_response",
+                                    "since": payload.get("hour_date")}))
                 self._send_client_message(ctx, "advice_ack_handoff", {},
                                           payload.get("hour", 12), env=env)
                 return

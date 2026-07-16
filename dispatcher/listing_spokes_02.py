@@ -160,6 +160,17 @@ class Spoke02LeadQualification:
                     thought=f"signed rubric v{version} adopted; scoring "
                             f"unhalted",
                     result=f"rubric active: v{version}")
+            resolved_ctx = env.payload.get("resolve_hot_lead")
+            if resolved_ctx:
+                # Real gap found during the agent.status retrofit: nothing
+                # anywhere previously cleared open_escalations, meaning
+                # tuple 11 (rescore during open escalation, hold) would
+                # have permanently blocked rescoring for that context
+                # forever once it went HOT.
+                self.open_escalations.discard(resolved_ctx)
+                self.hub.send(_env("02", "18", "agent.status", resolved_ctx,
+                                   {"waiting_on": "hot_lead_human_response",
+                                    "resolved": True}))
             return
 
         if env.intent in ("lead.captured", "lead.rescored"):
@@ -182,6 +193,9 @@ class Spoke02LeadQualification:
             if payload.get("demands_human"):
                 self._record_tier(ctx, "HOT")
                 self.open_escalations.add(ctx)
+                self.hub.send(_env("02", "18", "agent.status", ctx,
+                                   {"waiting_on": "hot_lead_human_response",
+                                    "since": payload.get("today")}))
                 self.hub.ingest_spoke_trace(
                     "02", env.envelope_id,
                     thought="lead demands a human - hot path regardless of "
@@ -231,6 +245,9 @@ class Spoke02LeadQualification:
 
             if tier == "HOT":
                 self.open_escalations.add(ctx)
+                self.hub.send(_env("02", "18", "agent.status", ctx,
+                                   {"waiting_on": "hot_lead_human_response",
+                                    "since": payload.get("today")}))
                 self.hub.escalate("escalation.hot_lead",
                                   {"client_context_id": ctx, "score": score,
                                    "sla_s": self.hot_lead_sla_seconds})

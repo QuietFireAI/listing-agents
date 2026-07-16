@@ -126,6 +126,9 @@ class Spoke03LeadNurture:
                                           "paused": False, "touch_count": 0,
                                           "consent": consent,
                                           "compliance_status": "pending"}
+            self.hub.send(_env("03", "18", "agent.status", ctx,
+                               {"waiting_on": "compliance_review",
+                                "since": env.payload.get("today")}))
             self.hub.ingest_spoke_trace(
                 "03", env.envelope_id,
                 thought=f"sequence {requested_seq!r} started for ctx={ctx!r}; "
@@ -221,6 +224,9 @@ class Spoke03LeadNurture:
             if verdict == "approved":
                 if seq:
                     seq["compliance_status"] = "cleared"
+                self.hub.send(_env("03", "18", "agent.status", ctx,
+                                   {"waiting_on": "compliance_review",
+                                    "resolved": True}))
                 self.hub.ingest_spoke_trace(
                     "03", env.envelope_id,
                     thought=f"compliance approved sequence content for "

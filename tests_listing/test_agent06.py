@@ -178,3 +178,36 @@ def test_overlapping_showing_conflict_holds_for_clarification(tmp_path):
     hub.send(showing_req("s-012", base_payload(requested_time="2026-08-01T10:00")))
     clar = persisted(hub, "clarification.request")
     assert any("calendar conflict" in c["payload"]["reason"] for c in clar)
+
+
+def test_feedback_ask_stops_after_two_never_asks_a_third(tmp_path):
+    """tuple 10 was declared (feedback_asks dict) but never actually
+    implemented - nothing incremented or read it. Proves the real fix."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "fb-001"
+    r1 = spoke.request_showing_feedback(ctx, today="2026-08-01")
+    r2 = spoke.request_showing_feedback(ctx)
+    r3 = spoke.request_showing_feedback(ctx)
+    assert [r1, r2, r3] == ["asked", "asked", "stopped"]
+    asks = persisted(hub, "client.message.request")
+    assert len(asks) == 2  # never a third
+
+
+def test_feedback_response_clears_the_wait(tmp_path):
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    spoke.request_showing_feedback("fb-002", today="2026-08-01")
+    status = persisted(hub, "agent.status")
+    assert any(s["payload"].get("waiting_on") == "showing_feedback" for s in status)
+
+    env = Envelope(from_agent="11", to_agent="06", intent="showing.feedback_response",
+                  client_context_id="fb-002", payload={"response": "great showing"},
+                  provenance={"source": "spoke-11", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    assert "fb-002" not in spoke.feedback_asks
+    statuses = persisted(hub, "agent.status")
+    assert any(s["payload"].get("resolved") for s in statuses)

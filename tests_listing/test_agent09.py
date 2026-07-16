@@ -231,3 +231,36 @@ def test_REGRESSION_missing_deadline_critical_fails_closed(tmp_path):
     hub.send(vendor_event("v-016", {"event_kind": "no_show"}))  # no flag at all
     clar = persisted(hub, "clarification.request")
     assert any("never self-substituted" in c["payload"]["reason"] for c in clar)
+
+
+def test_vendor_deliverable_wait_tracked_and_resolved(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    hub.on_turn_start()
+    hub.send(vendor_req("v-017", {"vendor_id": "insp-1", "kind": "inspector",
+                                  "today": "2026-08-01"}))
+    status = persisted(hub, "agent.status")
+    assert any(s["payload"].get("waiting_on") == "vendor_deliverable:inspector"
+              for s in status)
+
+    hub.send(vendor_event("v-017", {"event_kind": "deliverable_report",
+                                    "kind": "inspector",
+                                    "proof_artifact_present": True,
+                                    "doc_type": "inspection_report"}))
+    statuses = persisted(hub, "agent.status")
+    assert any(s["payload"].get("resolved") for s in statuses)
+
+
+def test_partial_deliverable_does_not_resolve_the_wait(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    hub.on_turn_start()
+    hub.send(vendor_req("v-018", {"vendor_id": "insp-1", "kind": "inspector",
+                                  "today": "2026-08-01"}))
+    hub.send(vendor_event("v-018", {"event_kind": "deliverable_report",
+                                    "kind": "inspector",
+                                    "proof_artifact_present": True,
+                                    "partial": True, "doc_type": "inspection_report"}))
+    statuses = persisted(hub, "agent.status")
+    assert not any(s["payload"].get("resolved") for s in statuses), \
+        "partial deliverable must not resolve the wait - still waiting on the rest"

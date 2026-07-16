@@ -128,6 +128,10 @@ class Spoke09VendorCoordination:
                 "vendor_id": vendor_id, "confirmed": True}
             self.hub.send(_env("09", "external", "vendor.schedule", ctx,
                                {"vendor_id": vendor_id, "kind": kind}))
+            if today:
+                self.hub.send(_env("09", "18", "agent.status", ctx,
+                                   {"waiting_on": f"vendor_deliverable:{kind}",
+                                    "since": today}))
             self.hub.send(_env("09", "18", "calendar.event", ctx,
                                {"event": f"vendor_{kind}", "vendor_id": vendor_id}))
             self.hub.ingest_spoke_trace(
@@ -206,6 +210,9 @@ class Spoke09VendorCoordination:
                 return
 
             target = "05" if kind == "photography" else "08"
+            self.hub.send(_env("09", "18", "agent.status", ctx,
+                               {"waiting_on": f"vendor_deliverable:{kind}",
+                                "resolved": True}))
             self.hub.send(_env("09", target, "deliverable.release", ctx,
                                {"doc_type": payload.get("doc_type"),
                                 "opens_correctly": True,

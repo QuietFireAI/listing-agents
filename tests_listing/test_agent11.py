@@ -269,3 +269,29 @@ def test_request_market_update_sends_data_request(tmp_path):
     spoke.request_market_update("c-018")
     req = persisted(hub, "data.request")
     assert req and req[0]["to_agent"] == "10"
+
+
+def test_advice_escalation_tracked_and_resolved_via_config_update(tmp_path):
+    from dispatcher.signatures import Ed25519Signer, Ed25519Verifier
+    audit_path = os.path.join(str(tmp_path), f"audit-{uuid.uuid4().hex[:8]}.jsonl")
+    signer = Ed25519Signer()
+    verifier = Ed25519Verifier(signer.public_key_bytes())
+    hub = Hub(Routes(IDENTITY_ROUTES), AuditLog(audit_path),
+             signature_verifier=verifier.verifier())
+    spoke = Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+    hub.send(client_reply("c-019", {"message": "what's it worth to you, negotiate"}))
+    assert "c-019" in spoke.awaiting_human_response
+    status = persisted(hub, "agent.status")
+    assert any(s["payload"].get("waiting_on") == "human_advice_response" for s in status)
+
+    env = Envelope(from_agent="human", to_agent="11", intent="config.update",
+                  client_context_id="c-019",
+                  payload={"resolve_advice_response": "c-019"},
+                  provenance={"source": "human", "captured_at": "runtime",
+                              "verbatim_available": True})
+    signer.sign(env)
+    hub.send(env)
+    assert "c-019" not in spoke.awaiting_human_response
+    statuses = persisted(hub, "agent.status")
+    assert any(s["payload"].get("resolved") for s in statuses)

@@ -63,6 +63,31 @@ class Spoke06ShowingScheduler:
                 return text.strip()
         return None
 
+    def request_showing_feedback(self, ctx: str, today: str | None = None):
+        """Tuple 10: feedback unanswered after two asks, stop asking. This
+        was previously a declared dict (feedback_asks) that nothing ever
+        read or incremented - the tuple was never actually implemented.
+        Schedule-driven re-ask, matching the established pattern."""
+        count = self.feedback_asks.get(ctx, 0)
+        if count >= 2:
+            self.hub.ingest_spoke_trace(
+                "06", "internal", thought=f"feedback unanswered after "
+                f"{count} asks for ctx={ctx!r} - stopping, per tuple 10",
+                result="stopped: ask_cap_reached")
+            self.hub.send(_env("06", "18", "agent.status", ctx,
+                               {"waiting_on": "showing_feedback",
+                                "resolved": True}))
+            return "stopped"
+        self.feedback_asks[ctx] = count + 1
+        self.hub.send(_env("06", "11", "client.message.request", ctx,
+                           {"template": "feedback_request",
+                            "tone": "neutral_no_reproach"}))
+        if count == 0 and today:
+            self.hub.send(_env("06", "18", "agent.status", ctx,
+                               {"waiting_on": "showing_feedback",
+                                "since": today}))
+        return "asked"
+
     def handle(self, env: Envelope):
         ctx = env.client_context_id
 
@@ -163,6 +188,10 @@ class Spoke06ShowingScheduler:
             return
 
         if env.intent == "showing.feedback_response":
+            self.feedback_asks.pop(ctx, None)
+            self.hub.send(_env("06", "18", "agent.status", ctx,
+                               {"waiting_on": "showing_feedback",
+                                "resolved": True}))
             self.hub.send(_env("06", "14", "interaction.log", ctx,
                                {"kind": "feedback_received",
                                 "response": env.payload.get("response")}))
@@ -174,9 +203,7 @@ class Spoke06ShowingScheduler:
             # tuple 4: no-show -> log + feedback request, NO reproach messaging
             self.hub.send(_env("06", "14", "interaction.log", ctx,
                                {"kind": "no_show"}))
-            self.hub.send(_env("06", "11", "client.message.request", ctx,
-                               {"template": "feedback_request",
-                                "tone": "neutral_no_reproach"}))
+            self.request_showing_feedback(ctx, env.payload.get("today"))
             if was_buyer_agent and agent_id:
                 self.showing_agent_no_shows[agent_id] = \
                     self.showing_agent_no_shows.get(agent_id, 0) + 1
