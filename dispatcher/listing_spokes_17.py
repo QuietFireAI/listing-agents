@@ -133,28 +133,29 @@ class Spoke17ComplianceFairHousing:
             content_hash = payload.get("content_hash") or str(content)
 
             # tuple 2: flagged content resubmitted UNCHANGED -> flag the
-            # repeat + human (a real edit changes the hash/text; the
-            # doctrine's own words are "unchanged", so only a literal
-            # match counts, not judgment about similarity)
+            # repeat + human. Real bug found on re-review: this used to
+            # return prior["findings"] WITHOUT recomputing - meaning if
+            # the ruleset changed between submissions, it would return
+            # stale cached findings instead of a real check. That's
+            # rubber-stamping, which tuple 8 explicitly forbids ("never
+            # rubber-stamp its own history"). Fixed: always recompute
+            # fresh; the resubmission signal only adds the repeat flag
+            # and escalation on top of a genuine fresh result.
             prior = self.prior_findings.get(content_hash)
-            if prior and prior.get("verdict") == "flagged":
+            is_resubmission_of_flagged = bool(prior and prior.get("verdict") == "flagged")
+
+            findings = self._find_prohibited(text)
+            findings += self._check_state_rules(text, payload.get("state"))
+            self.pending_reviews[ctx] = {"submitted_at": payload.get("today"),
+                                        "agent": submitting_agent}
+
+            if is_resubmission_of_flagged:
                 self.hub.escalate("escalation.legal_line",
                                   {"client_context_id": ctx,
                                    "trigger": "content resubmitted unchanged "
                                              "after being flagged - repeat, "
                                              "human notified",
                                    "agent": "17"})
-                self.hub.send(_env("17", submitting_agent, "content.verdict",
-                                   ctx, {"verdict": "flagged",
-                                        "findings": prior["findings"],
-                                        "ruleset_version": self.ruleset_version},
-                                  in_reply_to=env.envelope_id))
-                return
-
-            findings = self._find_prohibited(text)
-            findings += self._check_state_rules(text, payload.get("state"))
-            self.pending_reviews[ctx] = {"submitted_at": payload.get("today"),
-                                        "agent": submitting_agent}
 
             # tuple 7: missing brokerage ID on advertising -> block, no
             # format-constraint exceptions

@@ -197,3 +197,58 @@ def test_sla_breach_alerts_using_tracked_state_not_caller_math(tmp_path):
     assert result == "breached"
     clar = persisted(hub, "clarification.request")
     assert any("SLA breach" in c["payload"]["reason"] for c in clar)
+
+
+def test_REGRESSION_resubmission_recomputes_fresh_not_stale_cache(tmp_path):
+    """Real bug found on re-review: resubmission-unchanged used to return
+    prior['findings'] WITHOUT recomputing - stale cached findings instead
+    of a real check against the current ruleset. Directly violates tuple
+    8 ('never rubber-stamp its own history'). If the ruleset changed
+    between submissions (removing the phrase that caused the original
+    flag), a fresh recheck should now correctly approve it, not blindly
+    repeat the old flagged verdict."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke17ComplianceFairHousing(hub)
+    hub.on_turn_start()
+    hub.send(sign_ruleset(signer, ruleset={"prohibited_phrases": [
+        {"phrase": "adults only", "rule_id": "FHA-familial-status"}]}, version="v1"))
+    payload = {"draft": {"facts": ["adults only community"]}, "content_hash": "steer-hash"}
+    hub.send(review("c-020", payload))
+    verdicts = persisted(hub, "content.verdict")
+    assert verdicts[-1]["payload"]["verdict"] == "flagged"
+
+    # ruleset is corrected/updated to no longer prohibit this phrase
+    hub.send(sign_ruleset(signer, ruleset={"prohibited_phrases": []}, version="v2"))
+    hub.send(review("c-020", dict(payload)))
+    verdicts = persisted(hub, "content.verdict")
+    # fresh recompute against v2 ruleset - genuinely approved now, not a
+    # stale repeat of the v1 flagged verdict
+    assert verdicts[-1]["payload"]["verdict"] == "approved"
+    assert verdicts[-1]["payload"]["ruleset_version"] == "v2"
+
+
+def test_soft_steering_language_flagged_same_as_hard_prohibited(tmp_path):
+    """tuple 6 explicitly says 'however soft' - confirming the mechanism
+    actually catches a subtle real-estate steering phrase, not just the
+    blunt examples already in the ruleset fixture."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke17ComplianceFairHousing(hub)
+    hub.on_turn_start()
+    steering_ruleset = {"prohibited_phrases": [
+        {"phrase": "quiet family neighborhood", "rule_id": "steering-familial"}]}
+    hub.send(sign_ruleset(signer, ruleset=steering_ruleset, version="v1"))
+    hub.send(review("c-021", {"draft": {"facts": ["perfect quiet family neighborhood"]}}))
+    verdicts = persisted(hub, "content.verdict")
+    assert verdicts[0]["payload"]["verdict"] == "flagged"
+    assert verdicts[0]["payload"]["findings"][0]["rule"] == "steering-familial"
+
+
+def test_approved_content_resubmitted_does_not_falsely_trigger_repeat_escalation(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke17ComplianceFairHousing(hub)
+    hub.on_turn_start()
+    hub.send(sign_ruleset(signer))
+    payload = {"draft": {"facts": ["lovely 3 bedroom home"]}, "content_hash": "clean-hash"}
+    hub.send(review("c-022", payload))
+    hub.send(review("c-022", dict(payload)))
+    assert hub.queues["escalation.legal_line"] == []
