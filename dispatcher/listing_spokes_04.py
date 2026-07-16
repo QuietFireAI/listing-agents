@@ -243,12 +243,18 @@ class Spoke04ListingDescription:
                 result="content.review issued")
             self.hub.send(_env("04", "17", "content.review", ctx,
                                {"draft": draft}, in_reply_to=env.envelope_id))
+            self.hub.send(_env("04", "18", "agent.status", ctx,
+                               {"waiting_on": "compliance_review",
+                                "since": env.payload.get("today")}))
             return
 
         if env.intent == "content.verdict":
             verdict = env.payload.get("verdict")
             draft = self.drafts.get(ctx)
             if verdict == "approved":
+                self.hub.send(_env("04", "18", "agent.status", ctx,
+                                   {"waiting_on": "compliance_review",
+                                    "resolved": True}))
                 self.hub.ingest_spoke_trace(
                     "04", env.envelope_id,
                     thought="compliance approved - releasing to Marketing "

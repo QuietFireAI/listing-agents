@@ -79,6 +79,9 @@ class Spoke15FinancialTracking:
                                          "source": source}
             self.hub.send(_env("15", "14", "record.request", ctx,
                                {"dedupe_key": ctx}))
+            self.hub.send(_env("15", "18", "agent.status", ctx,
+                               {"waiting_on": "commission_crosscheck",
+                                "since": payload.get("today")}))
             return
 
         if env.intent == "record.response":
@@ -87,6 +90,9 @@ class Spoke15FinancialTracking:
             # code behind it. A discrepancy here is exactly the class of
             # thing tuple 1 exists to catch, just sourced from the
             # system-of-record instead of a human-reported dispute.
+            self.hub.send(_env("15", "18", "agent.status", ctx,
+                               {"waiting_on": "commission_crosscheck",
+                                "resolved": True}))
             commission = self.commissions.get(ctx)
             entries = payload.get("entries", [])
             if commission is None or not entries:

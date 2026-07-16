@@ -148,6 +148,9 @@ class Spoke17ComplianceFairHousing:
             findings += self._check_state_rules(text, payload.get("state"))
             self.pending_reviews[ctx] = {"submitted_at": payload.get("today"),
                                         "agent": submitting_agent}
+            self.hub.send(_env("17", "18", "agent.status", ctx,
+                               {"waiting_on": f"compliance_review:{submitting_agent}",
+                                "since": payload.get("today")}))
 
             if is_resubmission_of_flagged:
                 self.hub.escalate("escalation.legal_line",
@@ -209,6 +212,9 @@ class Spoke17ComplianceFairHousing:
                               in_reply_to=env.envelope_id,
                               confidence=SOURCE_VERIFIED))
             self.pending_reviews.pop(ctx, None)
+            self.hub.send(_env("17", "18", "agent.status", ctx,
+                               {"waiting_on": f"compliance_review:{submitting_agent}",
+                                "resolved": True}))
             self.hub.send(_env("17", "14", "interaction.log", ctx,
                                {"kind": "content_reviewed", "verdict": verdict,
                                 "submitting_agent": submitting_agent}))

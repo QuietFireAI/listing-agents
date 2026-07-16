@@ -151,6 +151,9 @@ class Spoke05MLSListingManagement:
                     result="draft entered, vendor.request issued")
                 self.hub.send(_env("05", "09", "vendor.request", ctx,
                                    {"kind": "photography"}))
+                self.hub.send(_env("05", "18", "agent.status", ctx,
+                                   {"waiting_on": "photography_deliverable",
+                                    "since": env.payload.get("today")}))
                 return
 
             authorizing_identity = env.provenance.get("signer", {}).get(
@@ -294,4 +297,7 @@ class Spoke05MLSListingManagement:
             self.hub.send(_env("05", "04", "listing.data", ctx,
                                {**self.property_data.get(ctx, {}),
                                 "photos": env.payload.get("photos", [])}))
+            self.hub.send(_env("05", "18", "agent.status", ctx,
+                               {"waiting_on": "photography_deliverable",
+                                "resolved": True}))
             return

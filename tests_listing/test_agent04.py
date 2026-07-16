@@ -171,3 +171,27 @@ def test_over_limit_cuts_adjectives_before_facts_never_cuts_attribution(tmp_path
     texts = [f["text"] for f in draft["facts"]]
     assert "1800 sq ft" in texts, "attributed fact must survive cuts"
     assert draft["cut_for_length"] is True
+
+
+def test_agent_status_wired_for_compliance_review_wait(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke04ListingDescription(hub)
+    hub.on_turn_start()
+    env = Envelope(from_agent="05", to_agent="04", intent="listing.data",
+                  client_context_id="s-001",
+                  payload={"facts": [{"text": "3 bed 2 bath", "source": "mls"}]},
+                  provenance={"source": "spoke-05", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    status = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+             and e["intent"] == "agent.status"]
+    assert any(s["payload"].get("waiting_on") == "compliance_review" for s in status)
+
+    verdict = Envelope(from_agent="17", to_agent="04", intent="content.verdict",
+                      client_context_id="s-001", payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+    status2 = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+              and e["intent"] == "agent.status"]
+    assert any(s["payload"].get("resolved") for s in status2)

@@ -175,6 +175,9 @@ class Spoke16AfterCloseReferral:
 
         if env.intent == "content.verdict":
             verdict = payload.get("verdict")
+            self.hub.send(_env("16", "18", "agent.status", ctx,
+                               {"waiting_on": "referral_reward_review",
+                                "resolved": True}))
             self.hub.ingest_spoke_trace(
                 "16", env.envelope_id,
                 thought=f"compliance verdict on referral-reward mention: "
@@ -194,6 +197,9 @@ class Spoke16AfterCloseReferral:
                 self.hub.send(_env("16", "17", "content.review", ctx,
                                    {"reason": "referral reward mention - "
                                              "inducement rules vary by state"}))
+                self.hub.send(_env("16", "18", "agent.status", ctx,
+                                   {"waiting_on": "referral_reward_review",
+                                    "since": payload.get("today")}))
                 return
 
             if any(w in message for w in _INCENTIVE_WORDS):

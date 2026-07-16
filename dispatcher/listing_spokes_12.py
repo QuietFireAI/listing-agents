@@ -80,6 +80,8 @@ class Spoke12MarketingCampaign:
         pending = self.approved_awaiting_ccp.pop(ctx, None)
         if pending is not None and self._ccp_gate_clear(ctx):
             self._publish_approved(ctx, pending["campaign"], pending["source"])
+            self.hub.send(_env("12", "18", "agent.status", ctx,
+                               {"waiting_on": "ccp_gate", "resolved": True}))
         elif pending is not None:
             self.approved_awaiting_ccp[ctx] = pending  # gate still not clear
 
@@ -152,6 +154,9 @@ class Spoke12MarketingCampaign:
                 self.pending_review[ctx] = campaign
                 self.hub.send(_env("12", "17", "content.review", ctx,
                                    {"campaign": campaign}))
+                self.hub.send(_env("12", "18", "agent.status", ctx,
+                                   {"waiting_on": "compliance_review",
+                                    "since": payload.get("today")}))
                 return
             if "budget_change_verbal" in payload:
                 # tuple 10: verbal budget change -> signed budget stands
@@ -171,6 +176,9 @@ class Spoke12MarketingCampaign:
         if env.intent == "content.verdict":
             verdict = payload.get("verdict")
             campaign = self.pending_review.pop(ctx, None)
+            self.hub.send(_env("12", "18", "agent.status", ctx,
+                               {"waiting_on": "compliance_review",
+                                "resolved": True}))
             if verdict == "approved":
                 if not self._ccp_gate_clear(ctx):
                     # tuple 4/7: gate is hard, verdict is a gate not a race.
@@ -180,6 +188,9 @@ class Spoke12MarketingCampaign:
                     # _check_awaiting_ccp to pick up.
                     self.approved_awaiting_ccp[ctx] = {"campaign": campaign,
                                                        "source": "self_written"}
+                    self.hub.send(_env("12", "18", "agent.status", ctx,
+                                       {"waiting_on": "ccp_gate",
+                                        "since": payload.get("today")}))
                     self.hub.ingest_spoke_trace(
                         "12", env.envelope_id,
                         thought="compliance approved, but CCP gate not "

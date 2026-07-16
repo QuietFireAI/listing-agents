@@ -179,6 +179,9 @@ class Spoke13BuyerSearchMatch:
                     self.criteria_pending_review.setdefault(ctx, []).extend(sensitive)
                     self.hub.send(_env("13", "17", "content.review", ctx,
                                        {"criteria": sensitive}))
+                    self.hub.send(_env("13", "18", "agent.status", ctx,
+                                       {"waiting_on": "criteria_compliance_review",
+                                        "since": payload.get("today")}))
                 return
             if "deliver_unknown_standing_preference" in payload:
                 self.deliver_unknown_ok[ctx] = bool(
@@ -195,6 +198,9 @@ class Spoke13BuyerSearchMatch:
         if env.intent == "content.verdict":
             verdict = payload.get("verdict")
             pending = self.criteria_pending_review.pop(ctx, [])
+            self.hub.send(_env("13", "18", "agent.status", ctx,
+                               {"waiting_on": "criteria_compliance_review",
+                                "resolved": True}))
             if verdict == "approved":
                 self.buyer_criteria.setdefault(ctx, []).extend(
                     [{**c, "source": STATED_BY_PARTY} for c in pending])
@@ -258,6 +264,9 @@ class Spoke13BuyerSearchMatch:
                 self.pending_showing[ctx] = {
                     "listing_id": payload.get("listing_id")}
                 self.hub.send(_env("13", "14", "record.request", ctx, {}))
+                self.hub.send(_env("13", "18", "agent.status", ctx,
+                                   {"waiting_on": "buyer_agreement_verification",
+                                    "since": payload.get("today")}))
                 return
             return
 
@@ -265,6 +274,9 @@ class Spoke13BuyerSearchMatch:
             pending = self.pending_showing.pop(ctx, None)
             if pending is None:
                 return
+            self.hub.send(_env("13", "18", "agent.status", ctx,
+                               {"waiting_on": "buyer_agreement_verification",
+                                "resolved": True}))
             agreement_on_file = payload.get("buyer_agreement_on_file", False)
             if not agreement_on_file:
                 # BUYER AGREEMENT GATE: absent = human escalation

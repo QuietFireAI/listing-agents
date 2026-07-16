@@ -67,6 +67,9 @@ class Spoke20SocialMediaMonitoring:
             # agent has no publish capability at all. Verdict is logged
             # for the human's eventual review, nothing more.
             draft = self.pending_drafts.pop(env.in_reply_to, None)
+            self.hub.send(_env("20", "18", "agent.status", ctx,
+                               {"waiting_on": "draft_compliance_review",
+                                "resolved": True}))
             self.hub.send(_env("20", "14", "interaction.log", ctx,
                                {"kind": "draft_verdict_received",
                                 "verdict": payload.get("verdict")}))
@@ -198,4 +201,6 @@ class Spoke20SocialMediaMonitoring:
                    "source_mention_id": source_mention_id})
         self.hub.send(env)
         self.pending_drafts[env.envelope_id] = {"text": draft_text}
+        self.hub.send(_env("20", "18", "agent.status", ctx,
+                           {"waiting_on": "draft_compliance_review"}))
         return "submitted_for_review"

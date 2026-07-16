@@ -63,6 +63,8 @@ class Spoke19Prospecting:
             return
         self.hub.send(_env("19", "10", "data.request", listing_id,
                            {"mode": "comp", "license_scope": "internal"}))
+        self.hub.send(_env("19", "18", "agent.status", listing_id,
+                           {"waiting_on": "market_context_enrichment"}))
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id
@@ -109,6 +111,8 @@ class Spoke19Prospecting:
                 self.hub.send(_env("19", "10", "data.request", ctx,
                                    {"mode": "neighborhood",
                                     "license_scope": "internal"}))
+                self.hub.send(_env("19", "18", "agent.status", ctx,
+                                   {"waiting_on": "farm_data_aggregate"}))
                 return
             return
 
@@ -233,6 +237,12 @@ class Spoke19Prospecting:
             return
 
         if env.intent == "data.package":
+            self.hub.send(_env("19", "18", "agent.status", ctx,
+                               {"waiting_on": "market_context_enrichment",
+                                "resolved": True}))
+            self.hub.send(_env("19", "18", "agent.status", ctx,
+                               {"waiting_on": "farm_data_aggregate",
+                                "resolved": True}))
             # market context enrichment for opportunity records - passed
             # through, never characterized (10's own presentation rule
             # applies here too)
