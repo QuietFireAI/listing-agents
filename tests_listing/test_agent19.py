@@ -214,3 +214,34 @@ def test_request_market_context_sends_data_request(tmp_path):
     spoke.request_market_context("L14")
     req = persisted(hub, "data.request")
     assert req and req[-1]["to_agent"] == "10"
+
+
+def test_REGRESSION_property_data_forwarded_enables_real_matching_in_13(tmp_path):
+    """Real bug found on re-review: prospect.opportunity only ever carried
+    meta/compliance fields, never actual property data (price, area, etc.)
+    - verified directly that a match could "succeed" with zero real price
+    comparison against a buyer's budget. Fixed to forward actual property
+    facts, verbatim, never invented. Proven here with a genuine
+    cross-agent integration: an over-budget property in the buyer's
+    target area must now correctly trigger 13's real conflict-check."""
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__) + "/..")
+    from dispatcher.listing_spokes_13 import Spoke13BuyerSearchMatch
+
+    hub, signer = make_hub(str(tmp_path))
+    Spoke19Prospecting(hub)
+    p13 = Spoke13BuyerSearchMatch(hub)
+    hub.on_turn_start()
+    hub.send(_setup_zip(signer))
+    p13.buyer_criteria["buyer-1"] = [
+        {"field": "budget", "value": 500000, "hard": True, "source": "stated_by_party"},
+        {"field": "area", "value": "downtown", "hard": True, "source": "stated_by_party"}]
+
+    hub.send(discovery("d-015", {"listing_id": "L15", "zip_code": "44811",
+                                 "status": "new", "source": "mls_feed",
+                                 "buyer_profile_match_ctx": "buyer-1",
+                                 "price": 700000, "area": "downtown"}))
+
+    clar = persisted(hub, "clarification.request")
+    assert any("exceeds stated budget" in c["payload"]["reason"] for c in clar)
+    assert p13.match_history.get("buyer-1") is None

@@ -158,6 +158,21 @@ class Spoke19Prospecting:
                      "representation_status": rep_status,
                      "dnc_status": "on_dnc" if on_dnc else "not_on_dnc"}
 
+            # Real bug found on re-review: this record only ever carried
+            # meta/compliance fields - never the actual property data
+            # (price, beds, area, etc.) that 13's matching logic needs to
+            # do real filtering. Verified directly: a match "succeeded"
+            # with zero actual price comparison, because price was never
+            # present to compare against a buyer's budget at all. Forward
+            # whatever property facts the discovery feed actually
+            # supplied, verbatim - never invented, only passed through.
+            _PROPERTY_FIELDS = ("price", "beds", "baths", "area", "sqft",
+                               "equipment", "garage", "colleague_listing",
+                               "data_anomaly")
+            for f in _PROPERTY_FIELDS:
+                if f in payload:
+                    record[f] = payload[f]
+
             # tuple 9: ranking rationale weaker than threshold -> present
             # unranked with data; a confident-looking rank without basis
             # is fabrication. Only include a rank at all if a real basis
