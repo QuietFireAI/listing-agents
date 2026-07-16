@@ -51,6 +51,7 @@ class Spoke12MarketingCampaign:
         self.approved_assets: dict[str, dict] = {}  # ctx -> asset from 04
         self.pending_review: dict[str, dict] = {}  # ctx -> content awaiting 17
         self.published: dict[str, dict] = {}  # ctx -> {content, verdict_locked}
+        self.approved_awaiting_ccp: dict[str, dict] = {}  # ctx -> approved content, gate not yet clear
         self.signed_budgets: dict[str, float] = {}  # ctx -> current signed budget
         self.engagement_sources: dict[str, dict[str, dict]] = {}  # ctx -> source -> metrics
         hub.register("12", self.handle)
@@ -61,6 +62,27 @@ class Spoke12MarketingCampaign:
         exempt = self.exempt_status.get(ctx, {})
         return bool(exempt.get("exempt") and exempt.get("disclosure_on_file"))
 
+    def _publish_approved(self, ctx: str, campaign, source: str):
+        self.published[ctx] = {"content": campaign, "verdict_locked": True}
+        self.hub.send(_env("12", "external", "campaign.publish", ctx,
+                           {"content": campaign, "source": source}))
+        self.hub.send(_env("12", "14", "interaction.log", ctx,
+                           {"kind": "campaign_published", "source": source}))
+
+    def _check_awaiting_ccp(self, ctx: str):
+        """Called whenever the CCP gate might have just cleared (MLS
+        confirmation or exempt status arriving) - publishes anything that
+        was approved earlier but held on the gate, instead of it being
+        silently lost. Real bug found on re-review: previously, an
+        approved campaign was popped from tracking and never stored
+        anywhere else if the gate wasn't clear yet - it would never
+        publish even after the gate cleared."""
+        pending = self.approved_awaiting_ccp.pop(ctx, None)
+        if pending is not None and self._ccp_gate_clear(ctx):
+            self._publish_approved(ctx, pending["campaign"], pending["source"])
+        elif pending is not None:
+            self.approved_awaiting_ccp[ctx] = pending  # gate still not clear
+
     def handle(self, env: Envelope):
         ctx = env.client_context_id
         payload = env.payload
@@ -68,6 +90,7 @@ class Spoke12MarketingCampaign:
         if env.intent == "status.update":
             if payload.get("status") == "active":
                 self.mls_confirmed[ctx] = True
+                self._check_awaiting_ccp(ctx)
             return
 
         if env.intent == "asset.release":
@@ -83,23 +106,27 @@ class Spoke12MarketingCampaign:
                 return
             self.approved_assets[ctx] = draft
             if not self._ccp_gate_clear(ctx):
-                # tuple 4: CCP status unclear -> no publish, hard gate
+                # tuple 4: CCP status unclear -> no publish, hard gate.
+                # Same bug fixed here as the content.verdict path: store
+                # for automatic publish once the gate clears, don't lose it.
+                self.approved_awaiting_ccp[ctx] = {"campaign": draft,
+                                                   "source": "04_asset"}
                 self.hub.ingest_spoke_trace(
                     "12", env.envelope_id,
                     thought="asset received from 04, but CCP gate not "
                             "clear (no MLS confirmation, no documented "
-                            "exempt status) - holding, not scheduling",
+                            "exempt status) - holding, will publish "
+                            "automatically once the gate clears",
                     result="held: ccp_gate")
                 return
-            self.hub.send(_env("12", "external", "campaign.publish", ctx,
-                               {"content": draft, "source": "04_asset"}))
-            self.hub.send(_env("12", "14", "interaction.log", ctx,
-                               {"kind": "campaign_published", "source": "04_asset"}))
+            self._publish_approved(ctx, draft, "04_asset")
+            return
             return
 
         if env.intent == "config.update":
             if "exempt_status" in payload:
                 self.exempt_status[ctx] = payload["exempt_status"]
+                self._check_awaiting_ccp(ctx)
                 return
             if "new_campaign" in payload:
                 campaign = payload["new_campaign"]
@@ -146,20 +173,22 @@ class Spoke12MarketingCampaign:
             campaign = self.pending_review.pop(ctx, None)
             if verdict == "approved":
                 if not self._ccp_gate_clear(ctx):
-                    # tuple 4/7: gate is hard, verdict is a gate not a race
+                    # tuple 4/7: gate is hard, verdict is a gate not a race.
+                    # Real bug fixed on re-review: this used to just hold
+                    # and lose the campaign - nothing published it even
+                    # after the gate later cleared. Now stored for
+                    # _check_awaiting_ccp to pick up.
+                    self.approved_awaiting_ccp[ctx] = {"campaign": campaign,
+                                                       "source": "self_written"}
                     self.hub.ingest_spoke_trace(
                         "12", env.envelope_id,
                         thought="compliance approved, but CCP gate not "
                                 "clear - nothing publishes until MLS "
-                                "confirms or exempt status is documented",
+                                "confirms or exempt status is documented; "
+                                "held for automatic publish once it does",
                         result="held: ccp_gate")
                     return
-                self.published[ctx] = {"content": campaign, "verdict_locked": True}
-                self.hub.send(_env("12", "external", "campaign.publish", ctx,
-                                   {"content": campaign, "source": "self_written"}))
-                self.hub.send(_env("12", "14", "interaction.log", ctx,
-                                   {"kind": "campaign_published",
-                                    "source": "self_written"}))
+                self._publish_approved(ctx, campaign, "self_written")
                 return
             if verdict == "flagged":
                 findings = payload.get("findings", [])
@@ -172,6 +201,23 @@ class Spoke12MarketingCampaign:
             self.hub.send(_env("12", "queue", "clarification.request", ctx,
                                {"reason": f"unrecognized verdict "
                                          f"{verdict!r}"}))
+            return
+
+        if env.intent == "platform.metrics" and payload.get("event_kind") == "truncated":
+            # tuple 1: platform-forced truncation IS an edit - never
+            # silently accepted, goes back through 17 like any other
+            # change to an already-approved asset.
+            truncated_content = payload.get("truncated_content")
+            self.hub.send(_env("12", "17", "content.review", ctx,
+                               {"campaign": truncated_content,
+                                "reason": "platform-forced truncation - "
+                                         "truncation is an edit"}))
+            self.hub.ingest_spoke_trace(
+                "12", env.envelope_id,
+                thought="platform truncated approved content before "
+                        "publishing - that's an edit to a verdict-locked "
+                        "asset, back through 17, never accepted as-is",
+                result="resubmitted for review: truncation")
             return
 
         if env.intent == "platform.metrics" and payload.get("event_kind") == "rejection":

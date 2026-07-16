@@ -219,3 +219,48 @@ def test_stale_asset_correction_unlocks_verdict_for_reentry(tmp_path):
     assert spoke.published["m-015"]["verdict_locked"] is False
     logs = persisted(hub, "interaction.log")
     assert any(l["payload"].get("kind") == "stale_asset_corrected" for l in logs)
+
+
+def test_REGRESSION_approved_campaign_publishes_once_gate_clears_later(tmp_path):
+    """Real bug found on re-review: an approved-but-gated campaign was
+    popped from tracking and never stored anywhere else - it would never
+    publish even after MLS confirmation arrived later."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke12MarketingCampaign(hub)
+    hub.on_turn_start()
+    hub.send(config_update(signer, "m-016", {"new_campaign": {"body": "newsletter"}}))
+    hub.send(verdict("m-016", {"verdict": "approved"}))
+    assert not persisted(hub, "campaign.publish")
+    assert "m-016" in spoke.approved_awaiting_ccp
+
+    hub.send(status_update("m-016", "active"))
+    pub = persisted(hub, "campaign.publish")
+    assert pub and pub[0]["payload"]["source"] == "self_written"
+    assert "m-016" not in spoke.approved_awaiting_ccp
+
+
+def test_REGRESSION_asset_from_04_publishes_once_gate_clears_later(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke12MarketingCampaign(hub)
+    hub.on_turn_start()
+    hub.send(asset_release("m-017", {"draft": {"facts": []}}))
+    assert not persisted(hub, "campaign.publish")
+    assert "m-017" in spoke.approved_awaiting_ccp
+
+    hub.send(config_update(signer, "m-017", {"exempt_status": {
+        "exempt": True, "disclosure_on_file": True}}))
+    pub = persisted(hub, "campaign.publish")
+    assert pub and pub[0]["payload"]["source"] == "04_asset"
+
+
+def test_REGRESSION_platform_truncation_goes_back_through_17(tmp_path):
+    """tuple 1 was listed as 'implemented' in the docstring but had zero
+    actual code - found on re-review."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke12MarketingCampaign(hub)
+    hub.on_turn_start()
+    hub.send(platform_event("m-018", {"event_kind": "truncated",
+                                      "truncated_content": "cut off text..."}))
+    review = persisted(hub, "content.review")
+    assert review and review[0]["to_agent"] == "17"
+    assert "truncation" in review[0]["payload"]["reason"]
