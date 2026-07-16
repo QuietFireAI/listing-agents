@@ -1,0 +1,19 @@
+{
+ "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_table": "vendor_panel",
+ "_purpose": "Approved media/staging/sign vendors with terms",
+ "_fields": [
+  "vendor_id",
+  "service",
+  "terms_ref",
+  "insurance_current_until"
+ ],
+ "entries": [
+  {
+   "vendor_id": "<example>",
+   "service": "<example>",
+   "terms_ref": "<example>",
+   "insurance_current_until": "<example>"
+  }
+ ]
+}

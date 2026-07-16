@@ -1,0 +1,21 @@
+{
+ "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_table": "message_templates",
+ "_purpose": "Approved outbound templates per audience/purpose",
+ "_fields": [
+  "template_id",
+  "audience",
+  "purpose",
+  "body",
+  "approved_by"
+ ],
+ "entries": [
+  {
+   "template_id": "<example>",
+   "audience": "<example>",
+   "purpose": "<example>",
+   "body": "<example>",
+   "approved_by": "<example>"
+  }
+ ]
+}

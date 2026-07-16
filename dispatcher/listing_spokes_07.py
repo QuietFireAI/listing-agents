@@ -1,0 +1,338 @@
+"""Agent 07 - Transaction Coordinator, built against the full spec.
+
+Owns the transaction TIMELINE from offer submission through closing.
+Never represents, signs, or opines. The wire-fraud line is absolute and
+checked first, on every inbound event, regardless of type.
+"""
+from __future__ import annotations
+
+from .core import Envelope
+
+SOURCE_VERIFIED = "source_verified"
+STATED_BY_PARTY = "stated_by_party"
+UNKNOWN = "unknown"
+
+_WIRE_WORDS = ("wire instructions", "wiring details", "wire transfer",
+              "updated wire", "routing number", "account number for closing")
+
+
+def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
+    return Envelope(from_agent=frm, to_agent=to, intent=intent,
+                    client_context_id=ctx, payload=payload,
+                    confidence=confidence,
+                    provenance={"source": f"spoke-{frm}", "captured_at": "runtime",
+                                "verbatim_available": True})
+
+
+class Spoke07TransactionCoordinator:
+    """DECISIONS.md tuples implemented directly:
+      1. deadline calculable two ways -> clarification, both calculations shown
+      2. extension claimed w/ no amendment on file -> track original,
+         record claim stated_by_party, alert human
+      3. artifact contradicts tracked deadline -> halt milestone, human
+         with both items
+      4. multiple deadlines same day -> alert each individually, never
+         summarize into one
+      5. wire topic anywhere -> full stop, escalation.legal_line, no
+         partial handling
+      6. inspection report received -> log + distribute; repair
+         NEGOTIATION content is human-only, full stop
+      7. appraisal below contract price -> log fact, all options human,
+         never draft gap strategies
+      8. financing contingency date passes with no removal on file ->
+         alert human same hour, never assume waived
+      9. title exception surfaces -> log verbatim to human, never
+         characterize severity
+      10. closing date moves verbally -> track original until signed
+          amendment, claim stated_by_party
+      11. earnest money receipt not confirmed by deadline -> escalate,
+          money milestones never get benefit of the doubt
+      12. possession terms ambiguous -> clarification with exact clause
+          quoted, never interpolate intent
+    """
+
+    def __init__(self, hub):
+        self.hub = hub
+        self.timelines: dict[str, dict] = {}  # ctx -> {milestone: {deadline, satisfied, artifact}}
+        self.offer_status: dict[str, dict] = {}  # ctx -> {stage, response_deadline}
+        # tracks outstanding vendor.request per (ctx, milestone) -> date sent,
+        # cleared on the matching deliverable.release. 07 is cc'd on 09's
+        # deliverables specifically so a silent vendor failure doesn't go
+        # unnoticed until the deadline itself lapses - a 7-day hold-up
+        # timer to HITL, independent of and faster than deadline expiry.
+        self.vendor_requests_pending: dict[str, dict[str, str]] = {}
+        hub.register("07", self.handle)
+
+    def _wire_check(self, payload: dict, ctx: str) -> bool:
+        def flatten_strings(obj):
+            if isinstance(obj, str):
+                yield obj
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    yield from flatten_strings(v)
+            elif isinstance(obj, (list, tuple)):
+                for v in obj:
+                    yield from flatten_strings(v)
+        text = " ".join(flatten_strings(payload)).lower()
+        for w in _WIRE_WORDS:
+            if w in text:
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"wire topic detected: {w!r} - "
+                                             "full stop, out-of-band "
+                                             "verification required, no "
+                                             "partial handling",
+                                   "agent": "07"})
+                return True
+        return False
+
+    def handle(self, env: Envelope):
+        ctx = env.client_context_id
+        payload = env.payload
+
+        # Wire-fraud line: checked FIRST on every inbound event, regardless
+        # of intent type - "any wire topic in any channel", active every step.
+        if self._wire_check(payload, ctx):
+            return
+
+        if env.intent == "config.update":
+            if "offer_status" in payload:
+                stage_data = payload["offer_status"]
+                self.offer_status[ctx] = stage_data
+                self.hub.send(_env("07", "11", "deadline.alert", ctx,
+                                   {"kind": "offer_status", **stage_data}))
+                self.hub.send(_env("07", "18", "deadline.alert", ctx,
+                                   {"kind": "offer_status", **stage_data}))
+                self.hub.send(_env("07", "14", "interaction.log", ctx,
+                                   {"kind": "offer_status", **stage_data}))
+                return
+
+            if "timeline_init" in payload:
+                # P09 precondition: timeline loaded with full deadline set
+                milestones = payload["timeline_init"]
+                self.timelines[ctx] = {
+                    m: {"deadline": d, "satisfied": False, "artifact": None}
+                    for m, d in milestones.items()}
+                self.hub.send(_env("07", "14", "interaction.log", ctx,
+                                   {"kind": "timeline_loaded",
+                                    "milestones": list(milestones)}))
+                # job component: request required documents from 08 for
+                # every document-bearing milestone, as they come due
+                doc_milestones = {"inspection", "appraisal", "title",
+                                  "hoa_docs", "financing_contingency"}
+                for m in milestones:
+                    if m in doc_milestones:
+                        self.hub.send(_env("07", "08", "doc.request", ctx,
+                                           {"milestone": m}))
+                # job component: inspector/appraiser scheduling per milestone
+                vendor_milestones = {"inspection": "inspector",
+                                     "appraisal": "appraiser"}
+                sent_date = payload.get("today")  # test/caller supplies today
+                for m, kind in vendor_milestones.items():
+                    if m in milestones:
+                        self.hub.send(_env("07", "09", "vendor.request", ctx,
+                                           {"kind": kind, "milestone": m}))
+                        if sent_date:
+                            self.vendor_requests_pending.setdefault(ctx, {})[m] = sent_date
+                return
+
+            if "deadline_two_ways" in payload:
+                calcs = payload["deadline_two_ways"]
+                self.hub.send(_env("07", "queue", "clarification.request", ctx,
+                                   {"reason": "deadline calculable two ways",
+                                    "calculations": calcs}))
+                return
+
+            if "extension_claim" in payload:
+                claim = payload["extension_claim"]
+                milestone = claim.get("milestone")
+                if not claim.get("amendment_on_file"):
+                    # tuple 2: track the ORIGINAL, record claim stated_by_party
+                    self.hub.ingest_spoke_trace(
+                        "07", env.envelope_id,
+                        thought=f"extension claimed for {milestone!r} but no "
+                                f"amendment on file - tracking original "
+                                f"deadline, recording claim as "
+                                f"stated_by_party, alerting human",
+                        result="original deadline retained")
+                    self.hub.send(_env("07", "11", "deadline.alert", ctx,
+                                       {"kind": "unconfirmed_extension_claim",
+                                        "milestone": milestone},
+                                       confidence=STATED_BY_PARTY))
+                return
+
+            if "closing_date_moved_verbally" in payload:
+                claim = payload["closing_date_moved_verbally"]
+                if not claim.get("signed_amendment"):
+                    self.hub.ingest_spoke_trace(
+                        "07", env.envelope_id,
+                        thought="closing date reportedly moved verbally, no "
+                                "signed amendment - tracking the original "
+                                "date until one exists; claim recorded "
+                                "stated_by_party",
+                        result="original closing date retained")
+                return
+
+            if "possession_terms_ambiguous" in payload:
+                clause = payload["possession_terms_ambiguous"].get("clause_text")
+                self.hub.send(_env("07", "queue", "clarification.request", ctx,
+                                   {"reason": "possession terms ambiguous",
+                                    "exact_clause": clause}))
+                return
+            return
+
+        if env.intent == "doc.status":
+            milestone = payload.get("milestone")
+            timeline = self.timelines.get(ctx, {})
+            entry = timeline.get(milestone)
+
+            if payload.get("contradicts_tracked_deadline"):
+                self.hub.ingest_spoke_trace(
+                    "07", env.envelope_id,
+                    thought=f"received artifact contradicts the tracked "
+                            f"deadline for {milestone!r} - halting this "
+                            f"milestone, human gets both items",
+                    result="halted: artifact contradiction")
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"artifact contradicts tracked "
+                                             f"deadline: {milestone}",
+                                   "agent": "07"})
+                return
+
+            if milestone == "inspection" and payload.get("report_received"):
+                # tuple 6: log + distribute; repair NEGOTIATION is human-only
+                self.hub.send(_env("07", "14", "interaction.log", ctx,
+                                   {"kind": "inspection_report_received"}))
+                if payload.get("repair_requests_present"):
+                    self.hub.escalate("escalation.legal_line",
+                                      {"client_context_id": ctx,
+                                       "trigger": "repair negotiation content "
+                                                 "- human-only, full stop",
+                                       "agent": "07"})
+                if entry:
+                    entry["satisfied"] = True
+                    entry["artifact"] = "inspection_report"
+                return
+
+            if milestone == "appraisal" and "appraised_value" in payload:
+                contract_price = payload.get("contract_price")
+                if contract_price and payload["appraised_value"] < contract_price:
+                    # tuple 7: log the fact, all options human, never draft
+                    # gap strategies
+                    self.hub.escalate("escalation.legal_line",
+                                      {"client_context_id": ctx,
+                                       "trigger": f"appraisal "
+                                                 f"{payload['appraised_value']} "
+                                                 f"below contract price "
+                                                 f"{contract_price} - all "
+                                                 f"options are human",
+                                       "agent": "07"})
+                if entry:
+                    entry["satisfied"] = True
+                    entry["artifact"] = "appraisal_report"
+                return
+
+            if milestone == "title" and payload.get("exception_found"):
+                # tuple 9: log verbatim, never characterize severity
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"title exception: "
+                                             f"{payload.get('exception_text')!r} "
+                                             f"(logged verbatim, not "
+                                             f"characterized)",
+                                   "agent": "07"})
+                return
+
+            if milestone == "earnest_money" and not payload.get("receipt_confirmed"):
+                # tuple 11: money milestones never get benefit of the doubt
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": "earnest money receipt not "
+                                             "confirmed by deadline",
+                                   "agent": "07"})
+                return
+
+            if milestone == "closing" and payload.get("artifact_on_file"):
+                if entry:
+                    entry["satisfied"] = True
+                    entry["artifact"] = payload.get("artifact_ref")
+                self.hub.ingest_spoke_trace(
+                    "07", env.envelope_id,
+                    thought="closing artifact on file - executing "
+                            "transaction.closed to 16/14/15, triggering P10",
+                    result="transaction.closed issued")
+                self.hub.send(_env("07", "16", "transaction.closed", ctx,
+                                   {"closed": True}))
+                self.hub.send(_env("07", "14", "transaction.closed", ctx,
+                                   {"closed": True}))
+                self.hub.send(_env("07", "15", "transaction.closed", ctx,
+                                   {"closed": True}))
+                return
+
+            if entry is not None and payload.get("artifact_on_file"):
+                entry["satisfied"] = True
+                entry["artifact"] = payload.get("artifact_ref")
+                self.hub.send(_env("07", "14", "interaction.log", ctx,
+                                   {"kind": "milestone_satisfied",
+                                    "milestone": milestone}))
+            return
+
+        if env.intent == "deliverable.release":
+            milestone = payload.get("milestone")
+            if ctx in self.vendor_requests_pending:
+                self.vendor_requests_pending[ctx].pop(milestone, None)
+            self.hub.ingest_spoke_trace(
+                "07", env.envelope_id,
+                thought=f"vendor deliverable received for {milestone!r} - "
+                        f"scheduling confirmed, clearing the hold-up timer "
+                        f"for this milestone",
+                result="vendor_request_cleared")
+            self.hub.send(_env("07", "14", "interaction.log", ctx,
+                               {"kind": "vendor_deliverable_received",
+                                "milestone": milestone}))
+            return
+
+    def check_vendor_holdups(self, ctx: str, today: str):
+        """7-day hold-up timer to HITL: if a vendor.request has gone
+        unanswered (no deliverable.release) for 7+ days, that's a hold-up
+        worth a human's attention on its own - independent of, and faster
+        than, waiting for the milestone deadline itself to lapse."""
+        import datetime
+        pending = self.vendor_requests_pending.get(ctx, {})
+        today_d = datetime.date.fromisoformat(today)
+        flagged = []
+        for milestone, sent_date in list(pending.items()):
+            sent_d = datetime.date.fromisoformat(sent_date)
+            if (today_d - sent_d).days >= 7:
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"vendor scheduling for "
+                                             f"{milestone!r} unconfirmed "
+                                             f"after 7 days - hold-up to "
+                                             f"HITL",
+                                   "agent": "07"})
+                flagged.append(milestone)
+        return flagged
+
+    def check_deadlines(self, ctx: str, today: str):
+        """Alert lead time is configuration, not judgment - called by an
+        external scheduler with today's date. Multiple deadlines landing
+        the same day get individual alerts (tuple 4), never summarized."""
+        timeline = self.timelines.get(ctx, {})
+        due_today = [(m, e) for m, e in timeline.items()
+                    if not e["satisfied"] and e["deadline"] == today]
+        for milestone, entry in due_today:
+            self.hub.send(_env("07", "11", "deadline.alert", ctx,
+                               {"milestone": milestone, "deadline": today}))
+            self.hub.send(_env("07", "18", "deadline.alert", ctx,
+                               {"milestone": milestone, "deadline": today}))
+            if milestone == "financing_contingency":
+                # tuple 8: date passes with no removal on file -> alert
+                # same hour, never assume waived
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": "financing contingency date "
+                                             "passed, no removal on file",
+                                   "agent": "07"})
+        return due_today

@@ -1,0 +1,304 @@
+"""Agent 04 - Listing Description, built against the full spec.
+
+Produces MLS descriptions/captions/flyer copy/tour scripts from property
+data. Describes only what's in the data. Nothing publishes without a
+Compliance (17) 'approved' verdict.
+"""
+from __future__ import annotations
+
+from .core import Envelope
+
+SOURCE_VERIFIED = "source_verified"
+STATED_BY_PARTY = "stated_by_party"
+UNKNOWN = "unknown"
+
+_SUPERLATIVE_WORDS = ("best block", "best in town", "best neighborhood",
+                     "safest", "most desirable", "top school")
+_PROTECTED_CLASS_REQUEST_WORDS = ("school quality", "school rating",
+                                 "neighborhood demographics", "family-friendly",
+                                 "great schools", "school district rating")
+
+
+def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN, in_reply_to=None):
+    return Envelope(from_agent=frm, to_agent=to, intent=intent,
+                    client_context_id=ctx, payload=payload,
+                    confidence=confidence, in_reply_to=in_reply_to,
+                    provenance={"source": f"spoke-{frm}", "captured_at": "runtime",
+                                "verbatim_available": True})
+
+
+class Spoke04ListingDescription:
+    """DECISIONS.md tuples implemented directly:
+      1. photos contradict data sheet -> halt, clarification, both attached
+      2. feature cannot be verified -> omit, never hedge with 'may include'
+      3. human-supplied copy appears to violate fair housing -> flag to 17
+         AND human, never silently rewrite
+      4. space forces cuts -> adjectives before facts; attributions never cut
+      5. superlatives requested -> decline in copy
+      6. sq ft differs tax vs seller -> publish verifiable (tax) source,
+         note discrepancy to human, never average
+      7. seller requests school-quality/demographics language -> refuse,
+         fair-housing gate, 17 verdict required regardless
+      8. photo reveals protected-class info -> flag to human before any use
+      9. feature unverifiable (roof age, HVAC year) -> include only as
+         per-seller w/ attribution, or omit; no bare claims
+      10. 17 requires changes -> apply exactly, no negotiation
+      11. remarks exceed MLS field limits -> cut adjectives before facts,
+          attributions never cut
+    """
+
+    def __init__(self, hub, mls_char_limit: int = 800):
+        self.hub = hub
+        self.drafts: dict[str, dict] = {}  # ctx -> draft asset pending verdict
+        self.mls_char_limit = mls_char_limit
+        hub.register("04", self.handle)
+
+    def _build_facts(self, data: dict) -> tuple[list[dict], list[str]]:
+        """Returns (facts, human_notes). Each fact: {text, attribution,
+        adjective: bool}. Only fields present in `data` are ever emitted -
+        a feature not in the data does not exist."""
+        facts = []
+        notes = []
+
+        beds = data.get("beds")
+        baths = data.get("baths")
+        if beds is not None:
+            facts.append({"text": f"{beds} bedrooms", "attribution": None,
+                         "adjective": False})
+        if baths is not None:
+            facts.append({"text": f"{baths} bathrooms", "attribution": None,
+                         "adjective": False})
+
+        # tuple 6: sq ft discrepancy -> publish verifiable (tax) source,
+        # note to human, never average
+        sqft_tax = data.get("sqft_tax_record")
+        sqft_seller = data.get("sqft_seller_claim")
+        if sqft_tax is not None and sqft_seller is not None and sqft_tax != sqft_seller:
+            facts.append({"text": f"{sqft_tax} sq ft",
+                         "attribution": "per county tax records",
+                         "adjective": False})
+            notes.append(f"sq ft discrepancy: tax record={sqft_tax}, "
+                        f"seller claim={sqft_seller} - published the "
+                        f"verifiable source, never averaged")
+        elif sqft_tax is not None:
+            facts.append({"text": f"{sqft_tax} sq ft",
+                         "attribution": "per county tax records",
+                         "adjective": False})
+        elif sqft_seller is not None:
+            facts.append({"text": f"{sqft_seller} sq ft",
+                         "attribution": "per seller", "adjective": False})
+
+        # tuple 9: unverifiable feature (roof age, HVAC year) -> per-seller
+        # attribution or omit entirely; no bare claims
+        for field, label in (("roof_age", "roof"), ("hvac_year", "HVAC system")):
+            val = data.get(field)
+            source = data.get(f"{field}_source")  # "verified" / "per_seller" / None
+            if val is None:
+                continue
+            if source == "verified":
+                facts.append({"text": f"{label}: {val}",
+                             "attribution": "verified", "adjective": False})
+            elif source == "per_seller":
+                facts.append({"text": f"{label}: {val}",
+                             "attribution": "per seller (unverified)",
+                             "adjective": False})
+            else:
+                notes.append(f"{label} value {val!r} has no source basis - "
+                            f"omitted (tuple: no bare claims)")
+
+        for feat in data.get("features", []):
+            facts.append({"text": feat, "attribution": None, "adjective": True})
+
+        return facts, notes
+
+    def _apply_gates(self, data: dict, ctx: str, env: Envelope) -> str | None:
+        """Returns an escalation reason if a hard gate fires, else None."""
+        # tuple 1: photos contradict data sheet -> halt, clarification
+        photo_features = set(data.get("photo_detected_features", []))
+        data_features = set(data.get("features", []))
+        contradictions = data.get("photo_data_contradictions")
+        if contradictions:
+            self.hub.send(_env("04", "queue", "clarification.request", ctx,
+                               {"reason": "photos contradict data sheet",
+                                "contradictions": contradictions,
+                                "photo_features": list(photo_features),
+                                "data_features": list(data_features)}))
+            return "photo_data_contradiction"
+
+        # tuple 8: photo reveals protected-class info -> flag to human first
+        if data.get("photo_reveals_protected_class"):
+            self.hub.escalate("escalation.legal_line",
+                              {"client_context_id": ctx,
+                               "trigger": "photo may reveal protected-class "
+                                         "information - human review before "
+                                         "any use",
+                               "agent": "04"})
+            return "photo_protected_class"
+
+        # tuple 7: seller requests school/demographic language -> refuse,
+        # fair-housing gate, but STILL goes to compliance regardless
+        requested_copy = str(data.get("requested_language", "")).lower()
+        for w in _PROTECTED_CLASS_REQUEST_WORDS:
+            if w in requested_copy:
+                self.hub.ingest_spoke_trace(
+                    "04", env.envelope_id,
+                    thought=f"requested language {w!r} - fair-housing gate, "
+                            f"refusing this content regardless of 17's "
+                            f"eventual verdict; drafted asset excludes it "
+                            f"and still goes to compliance review",
+                    result="refused: fair_housing_language")
+                break
+
+        # tuple 5: superlatives requested -> decline in copy
+        for w in _SUPERLATIVE_WORDS:
+            if w in requested_copy:
+                self.hub.ingest_spoke_trace(
+                    "04", env.envelope_id,
+                    thought=f"superlative {w!r} requested - characterization "
+                            f"is a steering vector, declining in copy",
+                    result="declined: superlative")
+                break
+
+        return None
+
+    def _media_rights_ok(self, data: dict) -> bool:
+        # tuple: only use media with confirmed usage rights (via 09)
+        media = data.get("media", [])
+        return all(m.get("rights_confirmed_via_09") for m in media) if media else True
+
+    def _cut_to_limit(self, facts: list[dict]) -> tuple[list[dict], bool]:
+        """Tuple 4/11: cut adjectives before facts; attributions never cut.
+        Never truncate mid-claim - drop whole fact entries only."""
+        def total_len(fs):
+            return sum(len(f["text"]) + (len(f["attribution"] or "") + 12) for f in fs)
+
+        if total_len(facts) <= self.mls_char_limit:
+            return facts, False
+
+        kept = [f for f in facts if not f["adjective"]]
+        if total_len(kept) <= self.mls_char_limit:
+            return kept, True
+
+        # still over: drop unattributed facts before attributed ones, but
+        # never truncate any single entry - only ever drop whole entries
+        attributed = [f for f in kept if f["attribution"]]
+        unattributed = [f for f in kept if not f["attribution"]]
+        result = list(attributed)
+        for f in unattributed:
+            if total_len(result + [f]) <= self.mls_char_limit:
+                result.append(f)
+        return result, True
+
+    def handle(self, env: Envelope):
+        ctx = env.client_context_id
+
+        if env.intent == "listing.data":
+            data = env.payload
+
+            # human-supplied copy (not this agent's own draft) reviewed for
+            # fair-housing violations before anything else - tuple 3
+            human_copy = data.get("human_supplied_copy")
+            if human_copy:
+                flagged_words = [w for w in _PROTECTED_CLASS_REQUEST_WORDS
+                                if w in human_copy.lower()]
+                if flagged_words:
+                    self.hub.ingest_spoke_trace(
+                        "04", env.envelope_id,
+                        thought=f"human-supplied copy appears to violate "
+                                f"fair housing ({flagged_words}) - flagging "
+                                f"to compliance AND human, never silently "
+                                f"rewriting it myself",
+                        result="flagged: human_copy_fair_housing")
+                    self.hub.escalate("escalation.legal_line",
+                                      {"client_context_id": ctx,
+                                       "trigger": f"human-supplied copy flagged: "
+                                                 f"{flagged_words}",
+                                       "agent": "04"})
+                    # still goes to compliance too, doesn't return early
+
+            gate = self._apply_gates(data, ctx, env)
+            if gate in ("photo_data_contradiction", "photo_protected_class"):
+                return
+
+            if not self._media_rights_ok(data):
+                self.hub.ingest_spoke_trace(
+                    "04", env.envelope_id,
+                    thought="one or more media assets lack confirmed usage "
+                            "rights via 09 - excluding unconfirmed media "
+                            "from this draft",
+                    result="media excluded: rights unconfirmed")
+
+            facts, notes = self._build_facts(data)
+            facts, was_cut = self._cut_to_limit(facts)
+
+            draft = {"ctx": ctx, "facts": facts, "notes": notes,
+                    "cut_for_length": was_cut}
+            self.drafts[ctx] = draft
+
+            self.hub.ingest_spoke_trace(
+                "04", env.envelope_id,
+                thought=f"draft built from supplied data only - "
+                        f"{len(facts)} facts, notes={notes}; submitting to "
+                        f"compliance before any release",
+                result="content.review issued")
+            self.hub.send(_env("04", "17", "content.review", ctx,
+                               {"draft": draft}, in_reply_to=env.envelope_id))
+            return
+
+        if env.intent == "content.verdict":
+            verdict = env.payload.get("verdict")
+            draft = self.drafts.get(ctx)
+            if verdict == "approved":
+                self.hub.ingest_spoke_trace(
+                    "04", env.envelope_id,
+                    thought="compliance approved - releasing to Marketing "
+                            "(12) and MLS/Listing Mgmt (05)",
+                    result="asset.release issued")
+                self.hub.send(_env("04", "12", "asset.release", ctx,
+                                   {"draft": draft}))
+                self.hub.send(_env("04", "05", "asset.release", ctx,
+                                   {"draft": draft}))
+                self.hub.send(_env("04", "14", "interaction.log", ctx,
+                                   {"kind": "asset_released"}))
+                return
+
+            if verdict == "flagged":
+                # 17's real contract (verified against its own SKILL.md/
+                # DECISIONS.md): 'approved' or 'flagged' with itemized
+                # findings - never a rewrite, never prescribed fix
+                # instructions. 04 applies the fix implied by each finding
+                # itself - exactly, no negotiation (tuple 10) - by removing
+                # the specific cited phrase, not by receiving a "remove
+                # this" instruction from 17.
+                findings = env.payload.get("findings", [])
+                removed = []
+                if draft:
+                    remaining = []
+                    for f in draft["facts"]:
+                        cited = any(finding.get("phrase", "") in f["text"]
+                                   for finding in findings)
+                        if cited:
+                            removed.append(f["text"])
+                        else:
+                            remaining.append(f)
+                    draft["facts"] = remaining
+                self.hub.ingest_spoke_trace(
+                    "04", env.envelope_id,
+                    thought=f"compliance flagged {len(findings)} finding(s) "
+                            f"with cited phrase + rule: {findings}; removed "
+                            f"exactly the cited content ({removed}), no "
+                            f"negotiation, resubmitting",
+                    result=f"removed={removed}")
+                self.hub.send(_env("04", "17", "content.review", ctx,
+                                   {"draft": draft}))
+                return
+
+            self.hub.ingest_spoke_trace(
+                "04", env.envelope_id,
+                thought=f"unrecognized verdict {verdict!r} - 17's contract "
+                        f"is only 'approved' or 'flagged'; holding rather "
+                        f"than guessing at an unknown verdict type",
+                result="held: unknown verdict type")
+            self.hub.send(_env("04", "queue", "clarification.request", ctx,
+                               {"reason": f"unrecognized verdict type: {verdict!r}"}))
+            return

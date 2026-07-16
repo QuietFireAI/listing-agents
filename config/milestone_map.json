@@ -1,0 +1,17 @@
+{
+ "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_table": "milestone_map",
+ "_purpose": "Listing lifecycle milestones and entry criteria",
+ "_fields": [
+  "milestone",
+  "entry_criteria",
+  "owner_agent"
+ ],
+ "entries": [
+  {
+   "milestone": "<example>",
+   "entry_criteria": "<example>",
+   "owner_agent": "<example>"
+  }
+ ]
+}

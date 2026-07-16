@@ -1,0 +1,41 @@
+{
+ "_status": "RATIFIED 2026-07-10 - owner sign-off, approved as written",
+ "classes": {
+  "P02": 2,
+  "P03": 2,
+  "P05": 2,
+  "P08": 2,
+  "P09": 2,
+  "P14": 2,
+  "P01": 3,
+  "P04": 3,
+  "P06": 3,
+  "P07": 3,
+  "P10": 3,
+  "P11": 3,
+  "P15": 3,
+  "P12": 4,
+  "P13": 4,
+  "P16": 3,
+  "P17": 3,
+  "P18": 3,
+  "P19": 2,
+  "P20": 3,
+  "P21": 4,
+  "P22": 3,
+  "P23": 3,
+  "P24": 4
+ },
+ "notes": {
+  "P05": "halt legs are compliance clocks (flagged call, ratification pending)",
+  "P14": "containment steps Class 2; notification rides Class 1 queues",
+  "P11": "front door Class 3; hot-lead escalations ride Class 1",
+  "P16": "morning brief is scheduled service; it never outranks live client traffic",
+  "P17": "books close is scheduled service; missed-item sweep escalations ride Class 1 queues",
+  "P19": "access custody is Class 2: exposure events are time-critical; secrets never in payloads",
+  "P21": "PROPOSED - re-score cycle is background annuity work (Class 4); a re-score that crosses into HOT rides the Class 1 escalation queues, same as P11",
+  "P22": "PROPOSED - buyer-feedback match refresh is active client work (Class 3); a waiting buyer is scheduled service, not background",
+  "P23": "PROPOSED - price-review evidence assembly is scheduled service (Class 3); it feeds a human decision and never outranks live client traffic",
+  "P24": "PROPOSED - prospecting is background outreach (Class 4); starts in HITL-per-case probation and stays there until reps-on-log + owner ratification of the prospecting tuples; a validated hot prospect escalation rides Class 1"
+ }
+}

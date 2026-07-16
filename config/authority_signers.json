@@ -1,0 +1,24 @@
+{
+ "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_table": "authority_signers",
+ "_purpose": "Login-based signer registry: humans authorized to sign authority intents, bound to IdP logins with MFA",
+ "_doctrine": "LOGIN-BASED SIGNER IDENTITY (owner decision 2026-07-11): an authority envelope is valid only when (a) the actor authenticated to the deployment's IdP as the named signer_login with MFA, and (b) the runtime stamps the envelope's signature block with {signer_login, idp_session_ref, timestamp} and hash-chains it into the append-only audit log. THE HONEST TRUST STATEMENT: a login is authentication of a person, not a cryptographic signature by that person; envelope integrity and non-repudiation come from the runtime's hash-linked audit chain and the IdP's session attestation. The IdP seam (INTEGRATIONS.md) is therefore a go-live prerequisite for any authority intent. Shared logins are prohibited; a signer row without mfa_required=true must fail closed.",
+ "_fields": [
+  "intent",
+  "signer_login",
+  "idp",
+  "mfa_required",
+  "effective",
+  "revoked"
+ ],
+ "entries": [
+  {
+   "intent": "<e.g. payment.authority>",
+   "signer_login": "<idp login, no shared accounts>",
+   "idp": "<idp seam ref>",
+   "mfa_required": true,
+   "effective": "<date>",
+   "revoked": null
+  }
+ ]
+}
