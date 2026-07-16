@@ -48,6 +48,8 @@ class Spoke18CalendarTask:
     system cannot source" - so the signal has to be pushed here directly).
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): max_events_per_day=8.
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, max_events_per_day: int = 8):
         self.hub = hub
         self.calendar: dict[str, list[dict]] = {}  # day -> events

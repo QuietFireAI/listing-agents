@@ -47,6 +47,8 @@ class Spoke04ListingDescription:
           attributions never cut
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): mls_char_limit=800.
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, mls_char_limit: int = 800):
         self.hub = hub
         self.drafts: dict[str, dict] = {}  # ctx -> draft asset pending verdict

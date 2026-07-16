@@ -223,3 +223,74 @@ def test_agent20_draft_compliance_review_wait(tmp_path):
     hub.send(verdict)
     status2 = status_events(hub)
     assert any(s["payload"].get("resolved") for s in status2)
+
+
+# --- Proves each newly-exposed tunable actually changes behavior, not just exists ---
+
+def test_TUNABLE_agent06_feedback_ask_cap_is_real(tmp_path):
+    from dispatcher.listing_spokes_06 import Spoke06ShowingScheduler
+    hub, signer = make_signed_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub, feedback_ask_cap=1)
+    hub.on_turn_start()
+    r1 = spoke.request_showing_feedback("t-1", today="2026-08-01")
+    r2 = spoke.request_showing_feedback("t-1")
+    assert [r1, r2] == ["asked", "stopped"]  # capped at 1, not the old hardcoded 2
+
+
+def test_TUNABLE_agent07_vendor_holdup_days_is_real(tmp_path):
+    from dispatcher.listing_spokes_07 import Spoke07TransactionCoordinator
+    hub, signer = make_signed_hub(str(tmp_path))
+    spoke = Spoke07TransactionCoordinator(hub, vendor_holdup_days=2)
+    hub.on_turn_start()
+    spoke.vendor_requests_pending["t-1"] = {"inspection": "2026-08-01"}
+    flagged = spoke.check_vendor_holdups("t-1", "2026-08-03")  # 2 days, not the old 7
+    assert flagged == ["inspection"]
+
+
+def test_TUNABLE_agent08_document_chase_cap_is_real(tmp_path):
+    from dispatcher.listing_spokes_08 import Spoke08DocumentCollection
+    hub, signer = make_signed_hub(str(tmp_path))
+    spoke = Spoke08DocumentCollection(hub, document_chase_cap=1)
+    hub.on_turn_start()
+    spoke.pending_requests["t-1"] = {"preapproval_letter": {"chase_count": 0}}
+    result = spoke.check_chase_timeout("t-1", "preapproval_letter")
+    assert result == "escalated"  # capped at 1, not the old 3
+
+
+def test_TUNABLE_agent10_opinion_press_threshold_is_real(tmp_path):
+    from dispatcher.listing_spokes_10 import Spoke10MarketData
+    hub, signer = make_signed_hub(str(tmp_path))
+    Spoke10MarketData(hub, opinion_press_threshold=1)
+    hub.on_turn_start()
+    env = Envelope(from_agent="03", to_agent="10", intent="data.request",
+                  client_context_id="t-1",
+                  payload={"mode": "comp", "message": "what's your opinion on this one",
+                          "license_scope": "internal"},
+                  provenance={"source": "spoke-03", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    assert hub.queues["escalation.legal_line"]  # fires on 1st ask, not the old 2nd
+
+
+def test_TUNABLE_agent17_near_miss_pattern_threshold_is_real(tmp_path):
+    from dispatcher.listing_spokes_17 import Spoke17ComplianceFairHousing
+    hub, signer = make_signed_hub(str(tmp_path))
+    spoke = Spoke17ComplianceFairHousing(hub, near_miss_pattern_threshold=1)
+    hub.on_turn_start()
+    ruleset_env = Envelope(from_agent="human", to_agent="17", intent="config.update",
+                          client_context_id="ruleset",
+                          payload={"ruleset": {"prohibited_phrases": [
+                              {"phrase": "adults only", "rule_id": "FHA"}]}, "version": "v1"},
+                          provenance={"source": "human", "captured_at": "runtime",
+                                      "verbatim_available": True})
+    signer.sign(ruleset_env)
+    hub.send(ruleset_env)
+    review = Envelope(from_agent="04", to_agent="17", intent="content.review",
+                     client_context_id="t-1",
+                     payload={"draft": {"facts": ["adults only"]}, "content_hash": "h1"},
+                     provenance={"source": "spoke-04", "captured_at": "runtime",
+                                 "verbatim_available": True})
+    hub.send(review)
+    reports = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+              and e["intent"] == "report.package"]
+    assert any(r["payload"].get("report_type") == "near_miss_pattern" for r in reports)

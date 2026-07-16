@@ -46,7 +46,10 @@ class Spoke17ComplianceFairHousing:
           pattern to owner, single verdicts miss drift
     """
 
-    def __init__(self, hub, sla_days: int = 1):
+    # TUNABLE (owner-ratified 2026-07-16): sla_days=1,
+    # near_miss_pattern_threshold=3. See docs/TUNING_MANUAL.md to change.
+    def __init__(self, hub, sla_days: int = 1, near_miss_pattern_threshold: int = 3):
+        self.near_miss_pattern_threshold = near_miss_pattern_threshold
         self.hub = hub
         self.ruleset: dict | None = None  # fails closed until signed config.update
         self.ruleset_version: str | None = None
@@ -200,7 +203,7 @@ class Spoke17ComplianceFairHousing:
             if verdict == "flagged":
                 self.near_miss_counts[submitting_agent] = \
                     self.near_miss_counts.get(submitting_agent, 0) + 1
-                if self.near_miss_counts[submitting_agent] >= 3:
+                if self.near_miss_counts[submitting_agent] >= self.near_miss_pattern_threshold:
                     self.hub.send(_env("17", "human", "report.package", ctx,
                                        {"report_type": "near_miss_pattern",
                                         "agent": submitting_agent,

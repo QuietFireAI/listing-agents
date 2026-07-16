@@ -56,6 +56,7 @@ class Spoke16AfterCloseReferral:
         self.adverse_event: dict[str, bool] = {}  # tuple 1/6 - human-only to clear
         self.stale_contacts: set[str] = set()  # tuple 9
         self.closed_transactions: dict[str, dict] = {}
+        self.checkins_sent: dict[str, set[int]] = {}  # ctx -> {30, 90, 365} sent
         hub.register("16", self.handle)
 
     def _touch_blocked(self, ctx: str) -> str | None:
@@ -72,6 +73,42 @@ class Spoke16AfterCloseReferral:
         if ctx in self.stale_contacts:
             return "stale_contact"
         return None
+
+    def check_post_close_milestones(self, ctx: str, today: str):
+        """Job component (the agent's own FIRST listed one): execute
+        check-ins at 30, 90, and 365 days post-close. Found completely
+        unimplemented while drafting the cadence config - date.trigger
+        handling, feedback caps, and referral/review solicitation were
+        all built, but this specific, explicitly-named mechanism never
+        was. Schedule-driven, matching the established pattern (check_
+        deadlines/check_vendor_holdups/check_sla)."""
+        import datetime
+        record = self.closed_transactions.get(ctx)
+        if record is None or not record.get("close_date"):
+            return "no_close_date"
+        close_d = datetime.date.fromisoformat(record["close_date"])
+        today_d = datetime.date.fromisoformat(today)
+        days_since = (today_d - close_d).days
+        sent = self.checkins_sent.setdefault(ctx, set())
+
+        due = None
+        for milestone in (30, 90, 365):
+            if days_since >= milestone and milestone not in sent:
+                due = milestone
+                break
+        if due is None:
+            return "none_due"
+
+        block = self._touch_blocked(ctx)
+        if block:
+            return f"blocked:{block}"
+
+        sent.add(due)
+        self.hub.send(_env("16", "11", "client.message.request", ctx,
+                           {"template": f"post_close_checkin_{due}day"}))
+        self.hub.send(_env("16", "14", "interaction.log", ctx,
+                           {"kind": "post_close_checkin_sent", "day": due}))
+        return f"sent:{due}"
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id

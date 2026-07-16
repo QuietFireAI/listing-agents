@@ -46,8 +46,13 @@ class Spoke06ShowingScheduler:
           via 05 first, never assume active
     """
 
-    def __init__(self, hub, min_notice_hours: dict[str, int] | None = None):
+    # TUNABLE (owner-ratified 2026-07-16): feedback_ask_cap=2,
+    # no_show_pattern_threshold=2. See docs/TUNING_MANUAL.md to change.
+    def __init__(self, hub, min_notice_hours: dict[str, int] | None = None,
+                 feedback_ask_cap: int = 2, no_show_pattern_threshold: int = 2):
         self.hub = hub
+        self.feedback_ask_cap = feedback_ask_cap
+        self.no_show_pattern_threshold = no_show_pattern_threshold
         self.confirmed_showings: dict[str, list[dict]] = {}  # ctx -> showings
         self.showing_agent_no_shows: dict[str, int] = {}  # requester_id -> count
         self.feedback_asks: dict[str, int] = {}  # showing_id -> ask count
@@ -69,7 +74,7 @@ class Spoke06ShowingScheduler:
         read or incremented - the tuple was never actually implemented.
         Schedule-driven re-ask, matching the established pattern."""
         count = self.feedback_asks.get(ctx, 0)
-        if count >= 2:
+        if count >= self.feedback_ask_cap:
             self.hub.ingest_spoke_trace(
                 "06", "internal", thought=f"feedback unanswered after "
                 f"{count} asks for ctx={ctx!r} - stopping, per tuple 10",
@@ -208,7 +213,7 @@ class Spoke06ShowingScheduler:
                 self.showing_agent_no_shows[agent_id] = \
                     self.showing_agent_no_shows.get(agent_id, 0) + 1
                 # tuple 8: agent no-shows twice -> flag pattern before third
-                if self.showing_agent_no_shows[agent_id] >= 2:
+                if self.showing_agent_no_shows[agent_id] >= self.no_show_pattern_threshold:
                     self.hub.send(_env("06", "queue", "clarification.request",
                                        ctx, {"reason": f"showing agent "
                                                        f"{agent_id!r} has "

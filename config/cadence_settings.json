@@ -1,5 +1,5 @@
 {
- "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_status": "PROPOSED DRAFT - owner must review, edit, ratify (date + sign-off), then load; loads fail closed while status is not RATIFIED. Every cadence below matches a mechanism the code already implements - schedule/ceiling values are the actual defaults currently baked into the source, listed here for visibility and easy retuning.",
  "_table": "cadence_settings",
  "_purpose": "Chase/confirmation cadences and lead-times",
  "_fields": [
@@ -10,10 +10,58 @@
  ],
  "entries": [
   {
-   "cadence_id": "<example>",
-   "purpose": "<example>",
-   "schedule": "<example>",
-   "ceiling": "<example>"
+   "cadence_id": "document_chase",
+   "purpose": "Follow-up cadence for an outstanding document request (Agent 08)",
+   "schedule": "as scheduled by the human/dispatcher calling check_chase_timeout",
+   "ceiling": "3 attempts, then escalate (document_chase_cap)"
+  },
+  {
+   "cadence_id": "showing_feedback_ask",
+   "purpose": "Feedback request after a showing (Agent 06)",
+   "schedule": "as scheduled by the human/dispatcher calling request_showing_feedback",
+   "ceiling": "2 asks, then stop (feedback_ask_cap)"
+  },
+  {
+   "cadence_id": "vendor_deliverable_holdup",
+   "purpose": "Vendor scheduling/deliverable timeout alert (Agent 07)",
+   "schedule": "checked daily via check_vendor_holdups",
+   "ceiling": "7 days unconfirmed, then alert (vendor_holdup_days)"
+  },
+  {
+   "cadence_id": "compliance_review_sla",
+   "purpose": "Turnaround SLA for a compliance review (Agent 17)",
+   "schedule": "checked via check_sla",
+   "ceiling": "1 day, then alert breach (sla_days)"
+  },
+  {
+   "cadence_id": "hot_lead_response",
+   "purpose": "Response SLA for a HOT-tier lead (Agent 02)",
+   "schedule": "measured from tier assignment",
+   "ceiling": "300 seconds / 5 min (hot_lead_sla_seconds)"
+  },
+  {
+   "cadence_id": "nurture_touch_frequency",
+   "purpose": "Maximum nurture-sequence touches per week (Agent 03)",
+   "schedule": "per calendar week",
+   "ceiling": "3 touches/week (frequency_cap_per_week)"
+  },
+  {
+   "cadence_id": "comp_data_staleness",
+   "purpose": "How old a comp can be before it's dropped as stale (Agent 10)",
+   "schedule": "checked at comp-package build time",
+   "ceiling": "30 days (staleness_days)"
+  },
+  {
+   "cadence_id": "market_data_retention",
+   "purpose": "Historic data retention window before 'absent' is the answer (Agent 10)",
+   "schedule": "checked at data.request time",
+   "ceiling": "730 days / 2 years (retention_days)"
+  },
+  {
+   "cadence_id": "post_close_checkins",
+   "purpose": "After-close relationship check-in points (Agent 16)",
+   "schedule": "30 / 90 / 365 days post-close, checked via check_post_close_milestones",
+   "ceiling": "n/a - fixed touch points, not a repeating cadence"
   }
  ]
 }

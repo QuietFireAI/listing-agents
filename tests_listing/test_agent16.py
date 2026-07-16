@@ -202,3 +202,42 @@ def test_review_request_respects_touch_gate(tmp_path):
     hub.send(config_update(signer, "n-001", {"review_request_due": True}))
     sends = persisted(hub, "client.message.request")
     assert any(s["payload"]["template"] == "review_request" for s in sends)
+
+
+def test_REGRESSION_post_close_checkins_actually_implemented(tmp_path):
+    """First-listed job component for this agent had zero code behind it
+    until now - found while drafting the cadence config, not assumed."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke16AfterCloseReferral(hub)
+    hub.on_turn_start()
+    hub.send(_on_list(signer))
+    txn = Envelope(from_agent="07", to_agent="16", intent="transaction.closed",
+                  client_context_id="n-001", payload={"close_date": "2026-07-01"},
+                  provenance={"source": "spoke-07", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(txn)
+
+    r1 = spoke.check_post_close_milestones("n-001", "2026-07-15")  # 14 days
+    assert r1 == "none_due"
+    r2 = spoke.check_post_close_milestones("n-001", "2026-07-31")  # 30 days
+    assert r2 == "sent:30"
+    r3 = spoke.check_post_close_milestones("n-001", "2026-08-01")  # still 30-day window, already sent
+    assert r3 == "none_due"
+
+    sends = persisted(hub, "client.message.request")
+    assert any(s["payload"]["template"] == "post_close_checkin_30day" for s in sends)
+
+
+def test_post_close_checkin_respects_touch_gate(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke16AfterCloseReferral(hub)
+    hub.on_turn_start()
+    hub.send(_on_list(signer))
+    hub.send(config_update(signer, "n-001", {"opt_out": True}))
+    txn = Envelope(from_agent="07", to_agent="16", intent="transaction.closed",
+                  client_context_id="n-001", payload={"close_date": "2026-07-01"},
+                  provenance={"source": "spoke-07", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(txn)
+    result = spoke.check_post_close_milestones("n-001", "2026-07-31")
+    assert result == "blocked:opted_out"

@@ -68,8 +68,12 @@ class Spoke08DocumentCollection:
           owner-authorized only
     """
 
-    def __init__(self, hub, expected_senders: dict[str, set[str]] | None = None):
+    # TUNABLE (owner-ratified 2026-07-16): document_chase_cap=3.
+    # See docs/TUNING_MANUAL.md to change.
+    def __init__(self, hub, expected_senders: dict[str, set[str]] | None = None,
+                 document_chase_cap: int = 3):
         self.hub = hub
+        self.document_chase_cap = document_chase_cap
         self.filed_documents: dict[str, list[dict]] = {}  # ctx -> filed docs
         self.pending_requests: dict[str, dict[str, dict]] = {}  # ctx -> {doc_type: {chase_count}}
         # per-context, per-doc-type set of senders this transaction expects -
@@ -142,7 +146,7 @@ class Spoke08DocumentCollection:
         if pending is None:
             return None
         pending["chase_count"] += 1
-        if pending["chase_count"] >= 3:
+        if pending["chase_count"] >= self.document_chase_cap:
             # tuple 5: chase attempts exhausted -> escalate, silence never
             # becomes "received"
             self.hub.send(_env("08", "07", "doc.status", ctx,

@@ -51,8 +51,11 @@ class Spoke07TransactionCoordinator:
           quoted, never interpolate intent
     """
 
-    def __init__(self, hub):
+    # TUNABLE (owner-ratified 2026-07-16): vendor_holdup_days=7.
+    # See docs/TUNING_MANUAL.md to change.
+    def __init__(self, hub, vendor_holdup_days: int = 7):
         self.hub = hub
+        self.vendor_holdup_days = vendor_holdup_days
         self.timelines: dict[str, dict] = {}  # ctx -> {milestone: {deadline, satisfied, artifact}}
         self.offer_status: dict[str, dict] = {}  # ctx -> {stage, response_deadline}
         # tracks outstanding vendor.request per (ctx, milestone) -> date sent,
@@ -310,7 +313,7 @@ class Spoke07TransactionCoordinator:
         flagged = []
         for milestone, sent_date in list(pending.items()):
             sent_d = datetime.date.fromisoformat(sent_date)
-            if (today_d - sent_d).days >= 7:
+            if (today_d - sent_d).days >= self.vendor_holdup_days:
                 self.hub.escalate("escalation.legal_line",
                                   {"client_context_id": ctx,
                                    "trigger": f"vendor scheduling for "

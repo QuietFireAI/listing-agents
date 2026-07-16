@@ -48,6 +48,8 @@ class Spoke02LeadQualification:
       12. all rubric inputs unknown -> tier UNKNOWN, not COLD
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): hot_lead_sla_seconds=300 (5 min).
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, hot_lead_sla_seconds: int = 300):
         self.hub = hub
         self.rubric: dict | None = None          # None = fails closed

@@ -1,5 +1,5 @@
 {
- "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_status": "PROPOSED DRAFT - owner must review, edit, ratify (date + sign-off), then load; loads fail closed while status is not RATIFIED. Milestones and owner_agent assignments below are drawn directly from the already-ratified playbooks and the agents actually built - not invented independently.",
  "_table": "milestone_map",
  "_purpose": "Listing lifecycle milestones and entry criteria",
  "_fields": [
@@ -9,9 +9,79 @@
  ],
  "entries": [
   {
-   "milestone": "<example>",
-   "entry_criteria": "<example>",
-   "owner_agent": "<example>"
+   "milestone": "intake",
+   "entry_criteria": "Signed listing agreement executed",
+   "owner_agent": "05"
+  },
+  {
+   "milestone": "media_ordered",
+   "entry_criteria": "Draft MLS record entered (Phase 1b, P01)",
+   "owner_agent": "05"
+  },
+  {
+   "milestone": "content_review",
+   "entry_criteria": "Photography deliverable verified present-and-opens",
+   "owner_agent": "17"
+  },
+  {
+   "milestone": "active",
+   "entry_criteria": "Content approved by 17 AND go-live pre-authorized in the signed onboarding package",
+   "owner_agent": "05"
+  },
+  {
+   "milestone": "marketing_live",
+   "entry_criteria": "Asset released to 12 AND CCP gate clear (MLS confirmed or documented exempt status)",
+   "owner_agent": "12"
+  },
+  {
+   "milestone": "showing_active",
+   "entry_criteria": "Buyer agreement on file AND identity verified (per showing request)",
+   "owner_agent": "06"
+  },
+  {
+   "milestone": "price_adjustment_review",
+   "entry_criteria": "Per P02 - market/showing feedback signals reviewed on the configured cadence",
+   "owner_agent": "05"
+  },
+  {
+   "milestone": "offer_received",
+   "entry_criteria": "Signed offer submitted (P08)",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "under_contract",
+   "entry_criteria": "Offer accepted, timeline loaded with full deadline set (P09)",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "inspection_period",
+   "entry_criteria": "Inspection scheduled and vendor confirmed",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "financing_contingency",
+   "entry_criteria": "Financing contingency deadline tracked, not yet removed",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "clear_to_close",
+   "entry_criteria": "All P09 milestones satisfied via verified artifact, closing block on calendar",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "closed",
+   "entry_criteria": "transaction.closed issued, settlement statement on file",
+   "owner_agent": "07"
+  },
+  {
+   "milestone": "post_close",
+   "entry_criteria": "Closed - handoff to after-close relationship management (P10, P13)",
+   "owner_agent": "16"
+  },
+  {
+   "milestone": "expired_withdrawn",
+   "entry_criteria": "Listing period lapsed without a closed transaction (P05)",
+   "owner_agent": "05"
   }
  ]
 }

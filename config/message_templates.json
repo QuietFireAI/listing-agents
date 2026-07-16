@@ -1,5 +1,5 @@
 {
- "_status": "UNRATIFIED TEMPLATE - owner must edit, ratify (date + sign-off), then load; loads fail closed while this line stands",
+ "_status": "PROPOSED DRAFT - owner must review, edit, ratify (date + sign-off), then load; loads fail closed while status is not RATIFIED. Every template_id below is one the code actually references by name - this is not a hypothetical list.",
  "_table": "message_templates",
  "_purpose": "Approved outbound templates per audience/purpose",
  "_fields": [
@@ -11,11 +11,193 @@
  ],
  "entries": [
   {
-   "template_id": "<example>",
-   "audience": "<example>",
-   "purpose": "<example>",
-   "body": "<example>",
-   "approved_by": "<example>"
+   "template_id": "new_match",
+   "audience": "buyer",
+   "purpose": "Notify a buyer of a new listing match to their stated criteria",
+   "body": "Hi {{first_name}}, a new listing just matched your search criteria. Want me to send details?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "showing_confirmation",
+   "audience": "buyer_or_seller",
+   "purpose": "Confirm a scheduled showing",
+   "body": "Your showing is confirmed for {{date}} at {{time}}. Reply here if anything changes.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "feedback_request",
+   "audience": "showing_agent_or_buyer",
+   "purpose": "Neutral, no-reproach request for feedback after a showing",
+   "body": "Thanks for viewing the property. Any feedback you can share would be appreciated.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "document_request",
+   "audience": "transaction_party",
+   "purpose": "Request a specific document during a transaction",
+   "body": "We still need your {{doc_type}} to keep things moving. Could you send it over when you get a chance?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "document_chase_followup",
+   "audience": "transaction_party",
+   "purpose": "Second/third follow-up on an outstanding document request",
+   "body": "Following up on the {{doc_type}} we requested - just checking if you need anything from us to get it over.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "document_unreadable_resend",
+   "audience": "transaction_party",
+   "purpose": "The document received didn't open correctly - request a resend",
+   "body": "The {{doc_type}} you sent didn't open on our end - could you resend it, maybe as a PDF?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "wrong_document_type",
+   "audience": "transaction_party",
+   "purpose": "The wrong document type was received - request the correct one",
+   "body": "Thanks for sending that over - looks like we actually need a {{requested}} rather than a {{received}}. Could you send the right one when you get a chance?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "preapproval_expired_notice",
+   "audience": "buyer",
+   "purpose": "Notify a buyer their pre-approval has expired mid-search",
+   "body": "Just a heads up - your pre-approval letter has expired. New matches will keep coming, but let's get an updated letter on file when you can.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "confirm_criteria_update",
+   "audience": "buyer",
+   "purpose": "Ask a buyer to confirm a search-criteria change rather than silently updating it",
+   "body": "You mentioned \"{{verbatim}}\" - want me to update your search criteria to reflect that, or was that just about this one property?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "advice_ack_handoff",
+   "audience": "client",
+   "purpose": "Acknowledge a pricing/strategy question and hand off to the human agent - never answers the question itself",
+   "body": "Great question - that's exactly the kind of thing your agent should weigh in on directly. They'll follow up with you shortly.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "acknowledge_no_promises",
+   "audience": "client",
+   "purpose": "Acknowledge an angry/upset client without making any promises or getting defensive",
+   "body": "I hear you, and I'm sorry this hasn't gone the way you expected. I'm flagging this for your agent right now so they can follow up personally.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "channel_change_confirmed",
+   "audience": "client",
+   "purpose": "Confirm a client's request to switch contact channel",
+   "body": "Got it - we'll reach you by {{new_channel}} from here on out.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "ask_for_particulars",
+   "audience": "client",
+   "purpose": "Client referenced a conversation not on file - ask for details rather than pretend to recall it",
+   "body": "I want to make sure I follow up on the right thing - could you remind me a bit more about what was discussed?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "weekly_market_update",
+   "audience": "buyer_or_seller",
+   "purpose": "Deliver a sourced neighborhood/market data package - facts only, never characterized",
+   "body": "Here's this week's market snapshot for your area: {{package}}",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "neighborhood_package",
+   "audience": "buyer",
+   "purpose": "Deliver sourced neighborhood data for a buyer's area of interest",
+   "body": "Here's the neighborhood data you asked about: {{package}}",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "refi_rate_fact",
+   "audience": "past_client",
+   "purpose": "State a refinance rate fact - never advice, source always attached",
+   "body": "Rates dropped to {{rate}}% per {{source}}. Wanted you to have the current number.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "referral_solicitation",
+   "audience": "past_client",
+   "purpose": "Periodic referral ask - never mentions any incentive or reward",
+   "body": "Hope you're settling in well! If you know anyone thinking about buying or selling, I'd love an introduction.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "review_request",
+   "audience": "past_client",
+   "purpose": "Post-close review/testimonial request",
+   "body": "It was a pleasure helping you with your home. If you have a minute, a review would mean a lot: {{review_link}}",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "sequence_touch",
+   "audience": "lead",
+   "purpose": "Scheduled nurture-sequence content, subject to frequency cap and compliance review",
+   "body": "{{content}}",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "team_will_follow_up",
+   "audience": "social_media_contact",
+   "purpose": "Acknowledge an inbound social question that may relate to an existing matter - never confirms client status",
+   "body": "Thanks for reaching out - a team member will follow up with you directly.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "next_legal_slot_offer",
+   "audience": "buyer_or_seller",
+   "purpose": "Offer the next legally-permissible showing/contact slot",
+   "body": "The next available time that works on our end is {{slot_time}} - does that work for you?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "birthday_greeting",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "Birthday greeting - dynamic template ({{event_type}}_greeting), list is the only authority",
+   "body": "Happy birthday, {{first_name}}! Hope you have a great one.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "home_anniversary_greeting",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "Home purchase anniversary greeting - suppressed if a distress event is on file",
+   "body": "Happy home anniversary, {{first_name}}! Hard to believe it's been a year (or more) since you moved in.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "holiday_greeting",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "Holiday greeting - list is the only authority for inclusion",
+   "body": "Wishing you and your family a wonderful {{holiday_name}}!",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "post_close_checkin_30day",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "30-day post-close check-in",
+   "body": "Hi {{first_name}}, just checking in a month after closing - how's everything going with the new place?",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "post_close_checkin_90day",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "90-day post-close check-in",
+   "body": "Hi {{first_name}}, hope the first few months in your new home have been great. Let me know if you need anything.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "post_close_checkin_365day",
+   "audience": "past_client_on_supplied_list",
+   "purpose": "1-year post-close check-in",
+   "body": "Hi {{first_name}}, can't believe it's been a year already! Hope you're loving the home.",
+   "approved_by": "<owner name/date>"
   }
  ]
 }

@@ -53,6 +53,8 @@ class Spoke03LeadNurture:
           gated human-reviewed reply, out of sequence
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): frequency_cap_per_week=3.
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, frequency_cap_per_week: int = 3):
         self.hub = hub
         self.active_sequences: dict[str, dict] = {}  # ctx -> {sequence_id, paused, touch_count}

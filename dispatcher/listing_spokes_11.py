@@ -61,6 +61,8 @@ class Spoke11ClientCommunication:
           14, confirm once
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): quiet_hours=(21, 8).
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, quiet_hours: tuple[int, int] = (21, 8),
                  exempt_alert_classes: set[str] | None = None):
         self.hub = hub

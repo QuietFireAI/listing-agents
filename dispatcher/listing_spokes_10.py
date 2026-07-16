@@ -46,8 +46,13 @@ class Spoke10MarketData:
           reconstruct from memory
     """
 
+    # TUNABLE (owner-ratified 2026-07-16): comp_minimum=5, staleness_days=30,
+    # retention_days=730, opinion_press_threshold=2.
+    # See docs/TUNING_MANUAL.md to change any of these.
     def __init__(self, hub, comp_minimum: int = 5,
-                 staleness_days: int = 30, retention_days: int = 730):
+                 staleness_days: int = 30, retention_days: int = 730,
+                 opinion_press_threshold: int = 2):
+        self.opinion_press_threshold = opinion_press_threshold
         self.hub = hub
         self.mls_feed: dict[str, list[dict]] = {}  # ctx -> list of listing.data facts
         self.comp_minimum = comp_minimum
@@ -72,7 +77,7 @@ class Spoke10MarketData:
             if any(w in message for w in _OPINION_WORDS):
                 count = self.pressed_for_opinion.get(ctx, 0) + 1
                 self.pressed_for_opinion[ctx] = count
-                if count >= 2:
+                if count >= self.opinion_press_threshold:
                     self.hub.escalate("escalation.legal_line",
                                       {"client_context_id": ctx,
                                        "trigger": "repeated request for a "
