@@ -285,7 +285,8 @@
    "senders": [
     "01",
     "13",
-    "15"
+    "15",
+    "11"
    ],
    "receivers": [
     "14"
@@ -298,7 +299,8 @@
    ],
    "receivers": [
     "01",
-    "13"
+    "13",
+    "11"
    ]
   },
   {
@@ -462,6 +464,15 @@
    ],
    "receivers": [
     "17"
+   ]
+  },
+  {
+   "intent": "client.reply",
+   "senders": [
+    "external"
+   ],
+   "receivers": [
+    "11"
    ]
   }
  ]
