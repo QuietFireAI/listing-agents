@@ -249,7 +249,8 @@
    "intent": "report.package",
    "senders": [
     "15",
-    "18"
+    "18",
+    "17"
    ],
    "receivers": [
     "human"
