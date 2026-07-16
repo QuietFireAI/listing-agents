@@ -514,6 +514,15 @@
    "receivers": [
     "19"
    ]
+  },
+  {
+   "intent": "social.mention",
+   "senders": [
+    "external"
+   ],
+   "receivers": [
+    "20"
+   ]
   }
  ]
 }
