@@ -103,6 +103,11 @@ class Spoke08DocumentCollection:
                                {"template": "document_request",
                                 "doc_type": doc_type},
                                in_reply_to=env.envelope_id))
+            today = payload.get("today")
+            if today:
+                self.hub.send(_env("08", "18", "agent.status", ctx,
+                                   {"waiting_on": f"document:{doc_type}",
+                                    "since": today}))
             self.hub.ingest_spoke_trace(
                 "08", env.envelope_id,
                 thought=f"document request for {doc_type!r} - chasing via "
@@ -296,7 +301,12 @@ class Spoke08DocumentCollection:
         # clean file
         existing.append({"doc_type": doc_type, "payload": payload,
                          "content_hash": payload.get("content_hash")})
+        had_pending = doc_type in self.pending_requests.get(ctx, {})
         self.pending_requests.get(ctx, {}).pop(doc_type, None)
+        if had_pending:
+            self.hub.send(_env("08", "18", "agent.status", ctx,
+                               {"waiting_on": f"document:{doc_type}",
+                                "resolved": True}))
         self.hub.send(_env("08", "14", "interaction.log", ctx,
                            {"kind": "document_filed", "doc_type": doc_type}))
 

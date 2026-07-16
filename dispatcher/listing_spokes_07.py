@@ -120,20 +120,23 @@ class Spoke07TransactionCoordinator:
                 # every document-bearing milestone, as they come due
                 doc_milestones = {"inspection", "appraisal", "title",
                                   "hoa_docs", "financing_contingency"}
+                sent_date = payload.get("today")  # test/caller supplies today
                 for m in milestones:
                     if m in doc_milestones:
                         self.hub.send(_env("07", "08", "doc.request", ctx,
-                                           {"milestone": m}))
+                                           {"milestone": m, "today": sent_date}))
                 # job component: inspector/appraiser scheduling per milestone
                 vendor_milestones = {"inspection": "inspector",
                                      "appraisal": "appraiser"}
-                sent_date = payload.get("today")  # test/caller supplies today
                 for m, kind in vendor_milestones.items():
                     if m in milestones:
                         self.hub.send(_env("07", "09", "vendor.request", ctx,
                                            {"kind": kind, "milestone": m}))
                         if sent_date:
                             self.vendor_requests_pending.setdefault(ctx, {})[m] = sent_date
+                            self.hub.send(_env("07", "18", "agent.status", ctx,
+                                               {"waiting_on": f"vendor_scheduling:{m}",
+                                                "since": sent_date}))
                 return
 
             if "deadline_two_ways" in payload:
@@ -282,6 +285,9 @@ class Spoke07TransactionCoordinator:
             milestone = payload.get("milestone")
             if ctx in self.vendor_requests_pending:
                 self.vendor_requests_pending[ctx].pop(milestone, None)
+                self.hub.send(_env("07", "18", "agent.status", ctx,
+                                   {"waiting_on": f"vendor_scheduling:{milestone}",
+                                    "resolved": True}))
             self.hub.ingest_spoke_trace(
                 "07", env.envelope_id,
                 thought=f"vendor deliverable received for {milestone!r} - "
