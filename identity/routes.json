@@ -505,6 +505,15 @@
    "receivers": [
     "12"
    ]
+  },
+  {
+   "intent": "discovery.feed",
+   "senders": [
+    "external"
+   ],
+   "receivers": [
+    "19"
+   ]
   }
  ]
 }
