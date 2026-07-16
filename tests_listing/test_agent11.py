@@ -147,6 +147,7 @@ def test_wire_topic_in_client_message_escalates(tmp_path):
 
 def test_channel_change_honored_recorded_confirmed_once(tmp_path):
     hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
     Spoke11ClientCommunication(hub)
     hub.on_turn_start()
     hub.send(client_reply("c-011", {"message": "text me instead please",
@@ -156,6 +157,9 @@ def test_channel_change_honored_recorded_confirmed_once(tmp_path):
     assert any(l["payload"].get("kind") == "channel_change" for l in logs)
     sends = persisted(hub, "client.message.send")
     assert any(s["payload"]["template"] == "channel_change_confirmed" for s in sends)
+    # the real fix: 14's authoritative consent must actually reflect this,
+    # not just log the event
+    assert crm.consent.get("c-011", {}).get("text") == "yes"
 
 
 def test_off_log_reference_asks_for_particulars_never_pretends_recall(tmp_path):

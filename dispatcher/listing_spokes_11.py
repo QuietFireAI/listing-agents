@@ -249,9 +249,16 @@ class Spoke11ClientCommunication:
 
             # tuple 11: contact-channel change -> honor, record, confirm once
             if payload.get("requests_channel_change"):
+                new_channel = payload.get("new_channel")
+                # A client explicitly asking to be reached via a channel
+                # clearly implies consent for it - log the event AND
+                # update 14's authoritative consent record, or a system
+                # reading consent later would still see it as
+                # unknown/no despite the client's explicit request.
                 self.hub.send(_env("11", "14", "interaction.log", ctx,
                                    {"kind": "channel_change",
-                                    "new_channel": payload.get("new_channel")}))
+                                    "new_channel": new_channel,
+                                    "consent": {new_channel: "yes"} if new_channel else {}}))
                 self._send_client_message(ctx, "channel_change_confirmed", {},
                                           payload.get("hour", 12), env=env)
                 return
