@@ -30,7 +30,12 @@ class Spoke15FinancialTracking:
       1. recorded commission differs from contract language -> escalate
          with the clause verbatim
       2. expense fits two categories with different tax flags -> flag
-         both, accountant decides
+         both, accountant decides. Fixed 2026-07-16: this only produced
+         an internal spoke-trace that vanished the moment the handler
+         returned - the flag was never stored on the expense entry
+         itself, so it never surfaced in any later report the accountant
+         would actually see. Now persisted on the entry (dual_category_
+         tax_conflict), same as verified already is.
       3. ROI attribution claimed by two sources -> report both claims
       4. a month of data is missing -> label missing, never interpolate
       5. any commission-language question -> escalation.legal_line
@@ -189,9 +194,15 @@ class Spoke15FinancialTracking:
                 categories = expense.get("categories", [])
                 tax_flags = expense.get("tax_flags", [])
                 receipt_on_file = expense.get("receipt_on_file", False)
-                if len(categories) > 1 and len(set(tax_flags)) > 1:
-                    # tuple 2: two categories, different tax flags -> flag
-                    # both, accountant decides
+                # tuple 2: two categories, different tax flags -> flag
+                # both, accountant decides. Fixed 2026-07-16: this only
+                # produced an internal spoke-trace that vanished the
+                # moment the handler returned - the flag was never stored
+                # on the expense entry itself, so it never surfaced in any
+                # later P&L/expense report the accountant would actually
+                # see. Now stored on the entry, same as "verified" already is.
+                dual_category_conflict = len(categories) > 1 and len(set(tax_flags)) > 1
+                if dual_category_conflict:
                     self.hub.ingest_spoke_trace(
                         "15", env.envelope_id,
                         thought=f"expense fits categories {categories} "
@@ -199,7 +210,8 @@ class Spoke15FinancialTracking:
                                 f"flagging both, accountant decides",
                         result="flagged: dual_category_tax_conflict")
                 entry = {**expense,
-                         "verified": bool(receipt_on_file)}
+                         "verified": bool(receipt_on_file),
+                         "dual_category_tax_conflict": dual_category_conflict}
                 # tuple 7: no receipt -> unverified, never promoted by time
                 self.expenses.setdefault(ctx, []).append(entry)
                 return

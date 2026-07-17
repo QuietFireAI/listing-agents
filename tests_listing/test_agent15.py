@@ -91,6 +91,24 @@ def test_dual_category_dual_tax_flag_flags_both(tmp_path):
     trace = [e for e in hub.audit.read() if e["kind"] == "spoke.trace"][-1]
     assert "dual_category_tax_conflict" in trace["result"]
 
+    # THE FIX: the flag must persist on the entry itself, not vanish once
+    # the handler returns - the accountant needs to see it in an actual
+    # report, not just an internal trace.
+    assert spoke.expenses["f-005"][0]["dual_category_tax_conflict"] is True
+    hub.send(config_update(signer, "f-005", {"generate_pnl": {"months": []}}))
+    pkg = persisted(hub, "report.package")[-1]["payload"]
+    assert pkg["expenses"]["f-005"][0]["dual_category_tax_conflict"] is True
+
+
+def test_single_category_expense_has_no_conflict_flag(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke15FinancialTracking(hub)
+    hub.on_turn_start()
+    hub.send(config_update(signer, "f-005b", {"add_expense": {
+        "categories": ["marketing"], "tax_flags": ["fully_deductible"],
+        "receipt_on_file": True}}))
+    assert spoke.expenses["f-005b"][0]["dual_category_tax_conflict"] is False
+
 
 def test_expense_without_receipt_recorded_unverified(tmp_path):
     hub, signer = make_hub(str(tmp_path))
