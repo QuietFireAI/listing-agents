@@ -15,6 +15,17 @@ SOURCE_VERIFIED = "source_verified"
 STATED_BY_PARTY = "stated_by_party"
 UNKNOWN = "unknown"
 
+# Every key _score() actually reads off a rubric. A rubric missing any of
+# these isn't covered by any DECISIONS.md tuple - per the doctrine's own
+# root rule ("no suitable tuple covers the task: STOP"), a partial rubric
+# gets rejected, not silently completed with hardcoded numbers. Job
+# Component #6 is binding: this agent applies the rubric, it never
+# authors or drifts it - backfilling a missing threshold with a baked-in
+# default is authoring, however small.
+REQUIRED_RUBRIC_KEYS = {"budget_threshold", "budget_weight",
+                       "timeline_days_threshold", "timeline_weight",
+                       "financing_weight", "hot_threshold", "warm_threshold"}
+
 
 def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
     return Envelope(from_agent=frm, to_agent=to, intent=intent,
@@ -28,9 +39,16 @@ class Spoke02LeadQualification:
     """Scores leads on readiness; assigns tier; routes hot/warm/dead.
 
     DECISIONS.md tuples implemented directly:
-      1. score on a tier boundary -> lower tier + flag for human
-      2. rubric missing/unreadable -> halt, clarification (implemented as
-         the default state until a rubric is delivered)
+      1. score on a tier boundary -> lower tier assigned (not just noted),
+         + flagged for human. Fixed 2026-07-16: the tier used to be
+         computed via score>=threshold (the HIGHER tier), with a note
+         appended claiming the lower tier was assigned - it wasn't. Now
+         the lower tier is actually assigned before the note is written.
+      2. rubric missing/unreadable -> halt, clarification. Fixed
+         2026-07-16: previously only produced a silent interaction.log
+         entry (tier=UNKNOWN); no clarification.request was ever sent, so
+         nothing alerted a human that scoring was halted. A real
+         clarification.request now fires for both this and tuple 12.
       3. lead demands a human -> hot path regardless of score
       4. stated urgency vs financing signals conflict -> financing wins,
          conflict logged
@@ -45,7 +63,17 @@ class Spoke02LeadQualification:
          here as a defense-in-depth note, not re-implemented redundantly
       10. budget conflicts with pre-approval doc -> doc wins, logged
       11. re-score request on a context with an open escalation -> hold
-      12. all rubric inputs unknown -> tier UNKNOWN, not COLD
+      12. all rubric inputs unknown -> tier UNKNOWN, not COLD; now also
+          sends clarification.request (see tuple 2)
+
+    Not a tuple, but a real gap found and fixed 2026-07-16: a signed
+    rubric missing any key _score() reads used to silently fall back to
+    a hardcoded default (e.g. hot_threshold=70) - Job Component #6 says
+    this agent applies the rubric, never authors or drifts it, and
+    backfilling a threshold nobody actually specified is authoring. No
+    tuple covers a partial rubric, so per the doctrine's own root rule
+    it's now rejected outright (prior rubric stays active, or None),
+    with a clarification.request naming exactly which keys are missing.
     """
 
     # TUNABLE (owner-ratified 2026-07-16): hot_lead_sla_seconds=300 (5 min).
@@ -117,17 +145,27 @@ class Spoke02LeadQualification:
 
         hot = r.get("hot_threshold", 70)
         warm = r.get("warm_threshold", 40)
-        if score >= hot:
+
+        # tuple: boundary score -> lower tier + flag for human. Checked
+        # FIRST, before the normal >= bands - a score sitting exactly on
+        # a threshold must actually get the lower tier, not just a note
+        # saying it did while the higher tier gets assigned anyway.
+        if score == hot:
+            tier = "WARM"
+            notes.append(f"score {score} sits exactly on a tier boundary "
+                        f"(HOT/WARM) - assigned the lower tier (WARM), "
+                        f"flagged for human")
+        elif score == warm:
+            tier = "COLD"
+            notes.append(f"score {score} sits exactly on a tier boundary "
+                        f"(WARM/COLD) - assigned the lower tier (COLD), "
+                        f"flagged for human")
+        elif score > hot:
             tier = "HOT"
-        elif score >= warm:
+        elif score > warm:
             tier = "WARM"
         else:
             tier = "COLD"
-
-        # tuple: boundary score -> lower tier + flag
-        if score in (hot, warm):
-            notes.append(f"score {score} sits exactly on a tier boundary - "
-                        f"assigned the lower tier, flagged for human")
 
         return tier, score, notes
 
@@ -155,13 +193,34 @@ class Spoke02LeadQualification:
             new_rubric = env.payload.get("rubric")
             version = env.payload.get("version")
             if new_rubric and version:
-                self.rubric = new_rubric
-                self.rubric_version = version
-                self.hub.ingest_spoke_trace(
-                    "02", env.envelope_id,
-                    thought=f"signed rubric v{version} adopted; scoring "
-                            f"unhalted",
-                    result=f"rubric active: v{version}")
+                missing = REQUIRED_RUBRIC_KEYS - set(new_rubric.keys())
+                if missing:
+                    # No tuple covers a partial rubric - root rule applies:
+                    # STOP, don't silently complete it with baked-in
+                    # numbers. Keep whatever rubric (or None) was already
+                    # active; the new one never takes effect.
+                    self.hub.ingest_spoke_trace(
+                        "02", env.envelope_id,
+                        thought=f"rubric v{version} is missing required "
+                                f"keys {sorted(missing)} - rejecting rather "
+                                f"than backfilling defaults, which would be "
+                                f"authoring the rubric, not applying it; "
+                                f"prior rubric (v{self.rubric_version}) "
+                                f"stays active",
+                        result=f"rejected: incomplete rubric v{version}")
+                    self.hub.send(_env("02", "queue", "clarification.request",
+                                       env.client_context_id,
+                                       {"reason": "rubric missing required keys",
+                                        "version": version,
+                                        "missing_keys": sorted(missing)}))
+                else:
+                    self.rubric = new_rubric
+                    self.rubric_version = version
+                    self.hub.ingest_spoke_trace(
+                        "02", env.envelope_id,
+                        thought=f"signed rubric v{version} adopted; scoring "
+                                f"unhalted",
+                        result=f"rubric active: v{version}")
             resolved_ctx = env.payload.get("resolve_hot_lead")
             if resolved_ctx:
                 # Real gap found during the agent.status retrofit: nothing
@@ -259,6 +318,18 @@ class Spoke02LeadQualification:
                                     "consent": payload.get("consent")}))
             elif tier == "COLD":
                 pass  # archived via the interaction.log below, never deleted
+            elif tier == "UNKNOWN":
+                # tuples 2 & 12: no rubric active / all rubric inputs
+                # unknown -> halt scoring; CLARIFICATION. Previously this
+                # only produced a silent interaction.log entry - the tier
+                # label was correct, but nothing ever told a human that
+                # scoring is halted for this lead. Fixed: a real
+                # clarification.request, same as every other hold state
+                # this agent produces.
+                self.hub.send(_env("02", "queue", "clarification.request",
+                                   ctx, {"reason": "scoring halted: " + (
+                                       "no rubric active" if self.rubric is None
+                                       else "all rubric inputs unknown")}))
 
             self.hub.send(_env("02", "14", "interaction.log", ctx,
                                {"tier": tier, "score": score,

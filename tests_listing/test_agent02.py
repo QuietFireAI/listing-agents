@@ -100,17 +100,47 @@ def test_unsigned_config_update_never_reaches_rubric(tmp_path):
 
 
 def test_boundary_score_assigns_lower_tier_and_flags(tmp_path):
+    """Was: the tier was computed via score>=threshold (the HIGHER tier)
+    and a note was appended claiming the lower tier was assigned - it
+    wasn't. This test used to assert tier=='WARM' at exactly the
+    WARM/COLD boundary, locking in the bug as 'correct'. Fixed: the
+    lower tier is now actually assigned."""
     hub, signer = make_hub(str(tmp_path))
     Spoke14CRMPipeline(hub)
     Spoke02LeadQualification(hub)
     hub.on_turn_start()
     hub.send(sign_config_update(signer, RUBRIC, "v1"))
 
-    # budget alone = 40 (exactly the warm threshold)
+    # budget alone = 40 (exactly the warm threshold - the WARM/COLD boundary)
     hub.send(lead("q-003", {"budget": 600_000, "timeline_days": 999,
                             "financing_progress": "none"}))
     logs = persisted(hub, "interaction.log")
+    assert logs[-1]["payload"]["tier"] == "COLD"
+    assert any("tier boundary" in n for n in logs[-1]["payload"]["notes"])
+
+
+def test_hot_warm_boundary_also_assigns_lower_tier(tmp_path):
+    """Same fix, the other boundary: score exactly at hot_threshold (70)
+    is the HOT/WARM boundary - lower tier is WARM, not HOT. This matters
+    more than the other boundary: the old bug meant a boundary score
+    triggered a real HOT escalation (SLA timer, human handoff) when it
+    should have gone to nurture instead."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+
+    # budget (40) + financing (20) + ??? need exactly 70: use a custom
+    # rubric where timeline_weight=10 so budget+timeline+financing=70
+    custom = {**RUBRIC, "timeline_weight": 10}
+    hub.send(sign_config_update(signer, custom, "v2"))
+    hub.send(lead("q-003b", {"budget": 600_000, "timeline_days": 10,
+                             "financing_progress": "preapproved"}))
+    logs = persisted(hub, "interaction.log")
     assert logs[-1]["payload"]["tier"] == "WARM"
+    assert not hub.queues["escalation.hot_lead"], \
+        "a boundary score must not trigger a real HOT escalation"
     assert any("tier boundary" in n for n in logs[-1]["payload"]["notes"])
 
 
@@ -265,3 +295,72 @@ def test_hot_lead_status_pushed_to_18(tmp_path):
     status = persisted(hub, "agent.status")
     assert status and status[0]["to_agent"] == "18"
     assert status[0]["payload"]["waiting_on"] == "hot_lead_human_response"
+
+
+# --------------------------------------------------- THE FIX: UNKNOWN alerts
+def test_no_rubric_now_sends_clarification_request(tmp_path):
+    """Was: tier=UNKNOWN (no rubric) only logged silently to
+    interaction.log - tuple #2 explicitly says 'halt scoring;
+    clarification' but nothing ever sent one. This matters right now,
+    not hypothetically: no rubric config exists anywhere in this
+    identity yet, so every lead hitting this agent today would have
+    silently vanished with zero alert."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+
+    hub.send(lead("q-011", {"budget": 600_000, "timeline_days": 10,
+                            "financing_progress": "preapproved"}))
+    clar = persisted(hub, "clarification.request")
+    assert any("no rubric active" in c["payload"]["reason"] for c in clar)
+
+
+def test_all_inputs_unknown_also_sends_clarification_request(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+
+    hub.send(lead("q-012", {}))  # nothing at all
+    clar = persisted(hub, "clarification.request")
+    assert any("all rubric inputs unknown" in c["payload"]["reason"] for c in clar)
+
+
+# ------------------------------------------ THE FIX: incomplete rubric
+def test_incomplete_rubric_rejected_not_backfilled_with_defaults(tmp_path):
+    """Was: r.get('hot_threshold', 70) etc. silently substituted hardcoded
+    defaults for any key a signed rubric omitted - Job Component #6 says
+    the agent applies the rubric, never authors or drifts it. A partial
+    rubric isn't covered by any tuple, so per the doctrine's own root
+    rule it gets rejected, not silently completed."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    q = Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+
+    incomplete = {"budget_threshold": 500_000, "budget_weight": 40}
+    hub.send(sign_config_update(signer, incomplete, "v-bad"))
+    assert q.rubric is None, "incomplete rubric must never be adopted"
+
+    clar = persisted(hub, "clarification.request")
+    assert any("missing required keys" in c["payload"]["reason"] for c in clar)
+    missing_keys_sent = next(c["payload"]["missing_keys"] for c in clar
+                             if "missing required keys" in c["payload"]["reason"])
+    assert "hot_threshold" in missing_keys_sent
+    assert "warm_threshold" in missing_keys_sent
+
+
+def test_incomplete_rubric_does_not_clobber_a_prior_good_one(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    q = Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+    assert q.rubric_version == "v1"
+
+    incomplete = {"budget_threshold": 500_000}
+    hub.send(sign_config_update(signer, incomplete, "v2-bad"))
+    assert q.rubric_version == "v1", "a bad update must not replace the good rubric"
