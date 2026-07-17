@@ -221,6 +221,29 @@ def test_stale_asset_correction_unlocks_verdict_for_reentry(tmp_path):
     assert any(l["payload"].get("kind") == "stale_asset_corrected" for l in logs)
 
 
+# ------------------------------------------- THE FIX: retract (tuple 9)
+def test_stale_asset_retraction_actually_pulls_it_down(tmp_path):
+    """Was: only 'correct' existed - no path ever actually retracted a
+    stale asset, despite the tuple offering it as a real choice."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke12MarketingCampaign(hub)
+    hub.on_turn_start()
+    hub.send(status_update("m-016", "active"))
+    hub.send(config_update(signer, "m-016", {"new_campaign": {"body": "x"}}))
+    hub.send(verdict("m-016", {"verdict": "approved"}))
+
+    hub.send(platform_event("m-016", {"event_kind": "stale_detected",
+                                      "delta": "listing withdrawn",
+                                      "retract_requested": True}))
+    assert spoke.published["m-016"].get("retracted") is True
+    assert spoke.published["m-016"]["verdict_locked"] is True, \
+        "a retraction isn't a correction - verdict_locked should be untouched"
+    publishes = persisted(hub, "campaign.publish")
+    assert any(p["payload"].get("action") == "retract" for p in publishes)
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("kind") == "stale_asset_retracted" for l in logs)
+
+
 def test_REGRESSION_approved_campaign_publishes_once_gate_clears_later(tmp_path):
     """Real bug found on re-review: an approved-but-gated campaign was
     popped from tracking and never stored anywhere else - it would never

@@ -37,9 +37,22 @@ class Spoke12MarketingCampaign:
       7. fair-housing verdict pending -> nothing publishes, verdict is a
          gate not a race
       8. campaign targets a geography -> farm rules apply; demographic
-         targeting parameters refused outright
-      9. published asset found factually stale -> correct or retract
-         same day, log the delta
+         targeting parameters refused outright. Only the demographic-
+         refusal half is implemented. NOT implemented: "farm rules apply"
+         for geography-based targeting has no code at all, because there
+         is no ratified farm-area boundary config anywhere in this
+         identity to check a targeted geography against. Same class of
+         gap as Agent 05's syndication tuples and Agent 10's scrape-
+         source tuple - honestly flagged as structurally unbuilt, not
+         guessed at.
+      9. published asset found factually stale -> correct or retract,
+         same day, log the delta. Fixed 2026-07-16: only "correct"
+         (reopen verdict_locked for revision) existed - there was no path
+         that actually retracted (pulled down) a stale asset at all.
+         Whoever detects the staleness now signals which applies via
+         retract_requested; defaults to correct (the non-destructive
+         option) when absent, matching the tuple's "or" as a real choice
+         rather than one silently-always path.
       10. budget change requested verbally -> signed budget stands until
           config.update
     """
@@ -122,7 +135,6 @@ class Spoke12MarketingCampaign:
                     result="held: ccp_gate")
                 return
             self._publish_approved(ctx, draft, "04_asset")
-            return
             return
 
         if env.intent == "config.update":
@@ -245,13 +257,35 @@ class Spoke12MarketingCampaign:
             return
 
         if env.intent == "platform.metrics" and payload.get("event_kind") == "stale_detected":
-            # tuple 9: correct or retract same day, log the delta
+            # tuple 9: correct OR retract, same day, log the delta. Fixed
+            # 2026-07-16: only "correct" (reopen verdict_locked for
+            # revision) existed - there was no path that actually pulled a
+            # stale asset down at all. Whoever detects the staleness
+            # signals which one applies via retract_requested; defaults to
+            # correct (the safer, non-destructive option) when absent.
             self.hub.send(_env("12", "14", "interaction.log", ctx,
-                               {"kind": "stale_asset_corrected",
+                               {"kind": "stale_asset_corrected"
+                                       if not payload.get("retract_requested")
+                                       else "stale_asset_retracted",
                                 "delta": payload.get("delta")}))
             published = self.published.get(ctx)
-            if published:
+            if payload.get("retract_requested"):
+                if published:
+                    published["retracted"] = True
+                self.hub.send(_env("12", "external", "campaign.publish", ctx,
+                                   {"action": "retract"}))
+                self.hub.ingest_spoke_trace(
+                    "12", env.envelope_id,
+                    thought="stale asset retracted rather than corrected - "
+                            "pulled from the platform, delta logged",
+                    result="retracted")
+            elif published:
                 published["verdict_locked"] = False
+                self.hub.ingest_spoke_trace(
+                    "12", env.envelope_id,
+                    thought="stale asset reopened for correction - "
+                            "verdict_locked cleared, delta logged",
+                    result="reopened for correction")
             return
 
         if env.intent == "platform.metrics":
