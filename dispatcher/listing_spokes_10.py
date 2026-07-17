@@ -29,21 +29,53 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
 class Spoke10MarketData:
     """DECISIONS.md tuples implemented directly:
       1. comps come back thin -> report the thinness, never widen params silently
-      2. sources conflict on a datum -> present both with provenance, never average
+      2. sources conflict on a datum -> present both with provenance, never
+         average. Fixed 2026-07-16: only implemented for comps (tuple 9's
+         sold-price case) - neighborhood packages had no way to even
+         represent a second conflicting source for one figure (schema was
+         one value per key). Now accepts either a single source dict or a
+         list of them per figure; a list with disagreeing values is
+         reported as a conflict, never averaged or silently narrowed to one.
       3. anyone asks for the opinion -> refuse, data only; escalate if pressed
-      4. staleness threshold reached -> regenerate, never reship
+      4. staleness threshold reached -> regenerate, never reship. Fixed
+         2026-07-16: only implemented for comps - neighborhood packages had
+         no staleness check at all, so a 3-year-old crime stat would ship
+         with no flag. Now checked the same way comps are.
       5. license limits the recipient -> deliver to human only + note limit
       6. scrape source blocks/changes terms -> stop that source, log raw
-         error, never route around
+         error, never route around. NOT implemented - this requires a
+         real scraping subsystem with per-source state (what's blocked,
+         when, why) that doesn't exist anywhere in this codebase. Same
+         class of gap as Agent 05's syndication tuples: honestly flagged
+         as structurally unbuilt, not stubbed to look done.
       7. datum lacks timestamp/source -> does not enter any package
       8. comp set thinner than rubric minimum -> deliver with thinness
          named, never padded
       9. two sources disagree on sold price -> report both with sources,
          never pick silently
       10. request smells like appraisal substitution -> data package with
-          not-an-appraisal note, 17 informed
+          not-an-appraisal note, 17 informed. Fixed 2026-07-16: the smell
+          check was computed once but only ever passed to the comp-mode
+          builder - a neighborhood-mode request with the same phrasing
+          ("what's this area actually worth instead of an appraisal")
+          never triggered the note or the 17 notification.
       11. historic data beyond retention -> absent is the answer, never
           reconstruct from memory
+
+    Structural gap, not fixed here (found during review 2026-07-16):
+    self.mls_feed accumulates listing.data from 05, but nothing ever reads
+    it - genuinely dead state, not just an oversight. Job Component #1
+    says comps are "pulled from MLS via 05 data feeds," but listing.data's
+    actual payload is the SUBJECT property's own facts (sqft, beds, baths
+    - confirmed by reading Agent 05's send directly), not a pool of
+    comparable OTHER properties. Wiring self.mls_feed into comp-building
+    would mean using the listing's own facts as if they were market comps
+    for itself - architecturally wrong, not a fix. Real comps require a
+    genuine MLS comp-search capability that doesn't exist anywhere in this
+    system; _build_comp_package currently (correctly, given what's
+    actually available) processes whatever comps list the requester
+    supplies directly, rather than pretending to have a search capability
+    that isn't there.
     """
 
     # TUNABLE (owner-ratified 2026-07-16): comp_minimum=5, staleness_days=30,
@@ -54,7 +86,11 @@ class Spoke10MarketData:
                  opinion_press_threshold: int = 2):
         self.opinion_press_threshold = opinion_press_threshold
         self.hub = hub
-        self.mls_feed: dict[str, list[dict]] = {}  # ctx -> list of listing.data facts
+        # ctx -> list of listing.data facts (SUBJECT property's own data,
+        # not a pool of comparable properties - see class docstring's
+        # "Structural gap" note. Currently unused: real comp-sourcing
+        # requires an MLS comp-search capability this system doesn't have.
+        self.mls_feed: dict[str, list[dict]] = {}
         self.comp_minimum = comp_minimum
         self.staleness_days = staleness_days
         self.retention_days = retention_days
@@ -125,7 +161,8 @@ class Spoke10MarketData:
                 self._build_comp_package(ctx, requester, payload,
                                          substitution_smell, env)
             elif mode == "neighborhood":
-                self._build_neighborhood_package(ctx, requester, payload, env)
+                self._build_neighborhood_package(ctx, requester, payload,
+                                                 substitution_smell, env)
             else:
                 self.hub.send(_env("10", "queue", "clarification.request", ctx,
                                    {"reason": f"unrecognized data.request "
@@ -189,25 +226,67 @@ class Spoke10MarketData:
         self.hub.send(_env("10", "14", "interaction.log", ctx,
                            {"kind": "package_delivered", "type": "comp"}))
 
-    def _build_neighborhood_package(self, ctx, requester, payload, env):
+    def _build_neighborhood_package(self, ctx, requester, payload,
+                                    substitution_smell, env):
         raw_data = payload.get("data", {})
-        # tuple 7: no timestamp/source -> dropped
-        clean = {k: v for k, v in raw_data.items()
-                if isinstance(v, dict) and v.get("source") and v.get("retrieval_date")}
-        dropped = [k for k in raw_data if k not in clean]
+        import datetime
+        today = payload.get("today")
+        today_d = datetime.date.fromisoformat(today) if today else None
+
+        def _valid_source(v):
+            if not isinstance(v, dict) or not v.get("source") or not v.get("retrieval_date"):
+                return False
+            # tuple 4: staleness threshold - regenerate, never reship.
+            # Was: no staleness check existed for neighborhood figures at
+            # all - a 3-year-old crime stat would ship with no flag.
+            if today_d:
+                rd = datetime.date.fromisoformat(v["retrieval_date"])
+                if (today_d - rd).days > self.staleness_days:
+                    return False
+            return True
+
+        figures = {}
+        conflicts = {}
+        dropped = []
+        for k, v in raw_data.items():
+            # tuple 2: sources conflict on a datum -> present both with
+            # provenance, never average. Was: schema only ever allowed one
+            # source per figure, structurally unable to represent a
+            # conflict at all - now a figure may be a single source dict
+            # (unchanged) or a list of them (new).
+            candidates = v if isinstance(v, list) else [v]
+            valid = [c for c in candidates if _valid_source(c)]
+            if not valid:
+                dropped.append(k)
+                continue
+            if len(valid) > 1 and len({c.get("value") for c in valid}) > 1:
+                conflicts[k] = [{"value": c["value"], "source": c["source"],
+                                "link": c.get("link")} for c in valid]
+                continue
+            chosen = valid[0]
+            figures[k] = {"value": chosen["value"], "source": chosen["source"],
+                         "link": chosen.get("link")}
 
         # never characterize - structural: only pass through source+value+link
         package = {
             "package_type": "neighborhood",
-            "figures": {k: {"value": v.get("value"), "source": v["source"],
-                            "link": v.get("link")} for k, v in clean.items()},
+            "figures": figures,
+            "conflicts": conflicts,
             "dropped_no_provenance": dropped,
         }
+        if substitution_smell:
+            package["not_an_appraisal_note"] = ("This is a data package, "
+                "not an appraisal or valuation opinion.")
+            self.hub.send(_env("10", "17", "compliance.notice", ctx,
+                               {"trigger": "data request smelled like "
+                                          "appraisal substitution",
+                                "agent": "10"}))
         self.hub.ingest_spoke_trace(
             "10", env.envelope_id,
-            thought=f"neighborhood package: {len(clean)} sourced figures, "
-                    f"{len(dropped)} dropped for no provenance - figures "
-                    f"only, no characterization emitted",
+            thought=f"neighborhood package: {len(figures)} sourced figures, "
+                    f"{len(conflicts)} conflicting, {len(dropped)} dropped "
+                    f"for no provenance or staleness - figures only, no "
+                    f"characterization emitted",
             result="neighborhood package built")
         self.hub.send(_env("10", requester, "data.package", ctx, package,
                            confidence=SOURCE_VERIFIED))

@@ -142,6 +142,74 @@ def test_neighborhood_package_never_characterizes(tmp_path):
     assert "characterization" not in pkg and "opinion" not in pkg and "recommendation" not in pkg
 
 
+# ------------------------------ THE FIX: neighborhood staleness (tuple 4)
+def test_stale_neighborhood_figure_dropped_never_reshipped(tmp_path):
+    """Was: no staleness check existed for neighborhood figures at all -
+    a 3-year-old crime stat would ship with no flag, ever."""
+    hub = make_hub(str(tmp_path))
+    Spoke10MarketData(hub, staleness_days=30)
+    hub.on_turn_start()
+    data = {"crime_index": {"value": 42, "source": "police-dept",
+                            "retrieval_date": "2024-01-01"}}  # ancient
+    hub.send(data_req("m-010", {"mode": "neighborhood", "data": data,
+                                "today": "2026-07-01"}))
+    pkg = persisted(hub, "data.package")[0]["payload"]
+    assert "crime_index" not in pkg["figures"]
+    assert "crime_index" in pkg["dropped_no_provenance"]
+
+
+def test_fresh_neighborhood_figure_ships_normally(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke10MarketData(hub, staleness_days=30)
+    hub.on_turn_start()
+    data = {"crime_index": {"value": 42, "source": "police-dept",
+                            "retrieval_date": "2026-06-15"}}
+    hub.send(data_req("m-011", {"mode": "neighborhood", "data": data,
+                                "today": "2026-07-01"}))
+    pkg = persisted(hub, "data.package")[0]["payload"]
+    assert pkg["figures"]["crime_index"]["value"] == 42
+
+
+# ---------------------------- THE FIX: neighborhood conflicts (tuple 2)
+def test_conflicting_neighborhood_sources_reported_never_averaged(tmp_path):
+    """Was: the payload schema only allowed one source per figure -
+    structurally unable to represent a conflict at all for neighborhood
+    data, even though the ambiguity protocol names this exact scenario
+    ('two crime stats for one area') as an anticipated case."""
+    hub = make_hub(str(tmp_path))
+    Spoke10MarketData(hub)
+    hub.on_turn_start()
+    data = {"crime_index": [
+        {"value": 42, "source": "police-dept", "retrieval_date": "2026-07-01"},
+        {"value": 58, "source": "neighborhoodscout.com", "retrieval_date": "2026-07-01"},
+    ]}
+    hub.send(data_req("m-012", {"mode": "neighborhood", "data": data}))
+    pkg = persisted(hub, "data.package")[0]["payload"]
+    assert "crime_index" not in pkg["figures"], "a conflict must not be averaged into figures"
+    assert len(pkg["conflicts"]["crime_index"]) == 2
+    sources = {c["source"] for c in pkg["conflicts"]["crime_index"]}
+    assert sources == {"police-dept", "neighborhoodscout.com"}
+
+
+# ---------------------- THE FIX: appraisal-substitution note (tuple 10)
+def test_appraisal_substitution_smell_fires_for_neighborhood_mode_too(tmp_path):
+    """Was: the smell check was computed once but only ever passed to the
+    comp-mode builder - the same phrasing in a neighborhood-mode request
+    never triggered the note or the 17 notification."""
+    hub = make_hub(str(tmp_path))
+    Spoke10MarketData(hub)
+    hub.on_turn_start()
+    data = {"school_rating": {"value": 8, "source": "greatschools.org",
+                              "retrieval_date": "2026-07-01"}}
+    hub.send(data_req("m-013", {"mode": "neighborhood", "data": data,
+                                "message": "what's it actually worth "
+                                          "instead of an appraisal"}))
+    pkg = persisted(hub, "data.package")[0]["payload"]
+    assert "not_an_appraisal_note" in pkg
+    notices = persisted(hub, "compliance.notice")
+    assert any(n["to_agent"] == "17" for n in notices)
+
+
 def test_REGRESSION_missing_license_scope_fails_closed_to_human(tmp_path):
     """The actual bug: license_scope defaulted to 'internal' (permissive)
     when unspecified, so the gate was trivially skipped by omission. Must
