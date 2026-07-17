@@ -74,6 +74,63 @@ def test_overlapping_sequence_runs_neither_until_human_picks(tmp_path):
     assert spoke.active_sequences["n-003"]["paused"] is True
 
 
+# ------------------------------------------- THE FIX: reassignment wins
+def test_reassignment_supersedes_without_holding_for_human(tmp_path):
+    """Tuple 10, confirmed distinct from tuple 4 (2026-07-16): a
+    deliberate reassignment (Agent 02 re-evaluating after a rescore) is
+    NOT the same as tuple 4's ambiguous simultaneous conflict - the
+    newer signed instruction should supersede outright, logged, not held
+    for a human who was never actually needed here."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub)
+    hub.on_turn_start()
+    ctx = "n-003b"
+
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"},
+                               "sequence_id": "seq_a"}))
+    assert spoke.active_sequences[ctx]["sequence_id"] == "seq_a"
+
+    reassign = Envelope(from_agent="02", to_agent="03", intent="lead.nurture",
+                       client_context_id=ctx,
+                       payload={"consent": {"email": "yes"},
+                               "sequence_id": "seq_b",
+                               "reassignment": True},
+                       provenance={"source": "spoke-02", "captured_at": "runtime",
+                                   "verbatim_available": True})
+    hub.send(reassign)
+
+    assert spoke.active_sequences[ctx]["sequence_id"] == "seq_b"
+    assert spoke.active_sequences[ctx]["paused"] is False
+    clar = persisted(hub, "clarification.request")
+    assert not any(c["payload"].get("reason") == "overlapping sequences"
+                  for c in clar), "a reassignment must not hold for human"
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("kind") == "sequence_reassigned" for l in logs)
+
+
+def test_ambiguous_overlap_without_reassignment_flag_still_holds(tmp_path):
+    """Confirms the default (tuple 4) path is unchanged: absent the
+    reassignment signal, an overlap still holds for a human exactly as
+    before - this is the genuine simultaneous-eligibility conflict, not
+    a deliberate supersession."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub)
+    hub.on_turn_start()
+    ctx = "n-003c"
+
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"},
+                               "sequence_id": "seq_a"}))
+    # no reassignment flag at all - the ambiguous-eligibility case
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"},
+                               "sequence_id": "seq_b"}))
+
+    assert spoke.active_sequences[ctx]["sequence_id"] == "seq_a", \
+        "without the reassignment signal, the original sequence must stay"
+    assert spoke.active_sequences[ctx]["paused"] is True
+    clar = persisted(hub, "clarification.request")
+    assert any(c["payload"].get("reason") == "overlapping sequences" for c in clar)
+
+
 def test_content_review_submitted_before_any_send(tmp_path):
     hub = make_hub(str(tmp_path))
     spoke = Spoke03LeadNurture(hub)

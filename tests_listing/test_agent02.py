@@ -83,6 +83,45 @@ def test_signed_rubric_adopted_and_applied(tmp_path):
     assert hub.queues["escalation.hot_lead"]
 
 
+# ------------------------------------------ THE FIX: reassignment signal
+def test_initial_capture_warm_lead_sends_reassignment_false(tmp_path):
+    """Agent 03's tuple 10 (deliberate reassignment, newest wins) needs
+    to be distinguished from its tuple 4 (ambiguous simultaneous
+    conflict) - the signal is whether this WARM tier came from a fresh
+    lead.captured or a later lead.rescored. An initial capture is never
+    a reassignment."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+
+    hub.send(lead("q-020", {"budget": 600_000, "timeline_days": 999,
+                            "financing_progress": "preapproved"}))  # WARM (60)
+    nurtures = persisted(hub, "lead.nurture")
+    assert nurtures and nurtures[0]["payload"]["reassignment"] is False
+
+
+def test_rescore_triggered_warm_lead_sends_reassignment_true(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+    hub.send(sign_config_update(signer, RUBRIC, "v1"))
+    ctx = "q-021"
+
+    hub.send(lead(ctx, {"budget": 0, "timeline_days": 999}))  # COLD, no send
+    rescore = Envelope(from_agent="03", to_agent="02", intent="lead.rescored",
+                      client_context_id=ctx,
+                      payload={"budget": 600_000, "timeline_days": 999,
+                              "financing_progress": "preapproved"},  # WARM (60)
+                      provenance={"source": "spoke-03", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(rescore)
+    nurtures = persisted(hub, "lead.nurture")
+    assert nurtures and nurtures[-1]["payload"]["reassignment"] is True
+
+
 def test_unsigned_config_update_never_reaches_rubric(tmp_path):
     hub, signer = make_hub(str(tmp_path))
     Spoke14CRMPipeline(hub)

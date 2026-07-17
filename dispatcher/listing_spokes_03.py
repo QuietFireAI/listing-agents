@@ -42,10 +42,10 @@ class Spoke03LeadNurture:
          says it isn't. This branch now explicitly resumes the sequence.
       3. sequence content has expired market data -> regenerate or skip the touch
       4. two sequences eligible -> run neither until human picks, never
-         stack. NOTE: this and tuple 10 below may describe the same
-         scenario with two different resolutions (run neither vs newest
-         wins) - flagged as a genuine open question, not resolved here;
-         the code currently applies tuple 4's behavior in every case.
+         stack. Confirmed 2026-07-16 (owner) distinct from tuple 10: this
+         is an ambiguous, simultaneous conflict with no clear precedence
+         - the default behavior for any sequence_id overlap that isn't
+         explicitly signaled as a reassignment.
       5. engagement spike -> rescore via 02, never convert signal into
          direct outreach itself
       6. contact replies STOP/equivalent -> suppress across ALL channels
@@ -57,9 +57,15 @@ class Spoke03LeadNurture:
       9. content references a listing that changed status -> pull the step,
          stale claims are fabrications
       10. two sequences target one context -> one per context, newest
-          signed instruction wins, overlap logged. See tuple 4's note -
-          the code does not currently implement a distinct "newest wins"
-          path; every overlap holds for a human instead.
+          signed instruction wins, overlap logged. Confirmed 2026-07-16
+          (owner) distinct from tuple 4: this is a deliberate, later
+          reassignment (02 re-evaluating after a rescore), not an
+          ambiguous simultaneous conflict. Fixed: lead.nurture now
+          carries reassignment=True when triggered by env.intent==
+          'lead.rescored' on 02's side - that's the actual signal this
+          agent needed and never had. When set, the new sequence
+          supersedes the old one outright (logged, not held); when
+          absent, tuple 4's hold-for-human applies.
       11. substantive question from inside a drip -> route to 11 for a
           gated human-reviewed reply, out of sequence
     """
@@ -144,25 +150,52 @@ class Spoke03LeadNurture:
 
             existing = self.active_sequences.get(ctx)
             requested_seq = env.payload.get("sequence_id", "default_drip")
+            is_reassignment = env.payload.get("reassignment", False)
             if existing and existing["sequence_id"] != requested_seq \
                     and not existing.get("superseded"):
-                # tuple: two sequences would target one context -> one per
-                # context, newest signed instruction wins, overlap logged
-                self.hub.ingest_spoke_trace(
-                    "03", env.envelope_id,
-                    thought=f"ctx={ctx!r} already running "
-                            f"{existing['sequence_id']!r}; new request for "
-                            f"{requested_seq!r} - two sequences eligible, "
-                            f"running NEITHER until human picks (never "
-                            f"stack), overlap logged",
-                    result="held: overlapping sequences")
-                self.hub.send(_env("03", "queue", "clarification.request", ctx,
-                                   {"reason": "overlapping sequences",
-                                    "existing": existing["sequence_id"],
-                                    "requested": requested_seq}))
-                self.active_sequences[ctx] = {**existing, "paused": True,
-                                              "overlap_with": requested_seq}
-                return
+                if is_reassignment:
+                    # tuple 10: "two sequences would target one context...
+                    # newest SIGNED instruction wins, overlap logged" - a
+                    # deliberate later re-evaluation (e.g. Agent 02
+                    # reassigning after a rescore), not an ambiguous
+                    # simultaneous eligibility conflict (tuple 4 below).
+                    # Distinct scenarios, confirmed 2026-07-16 - the code
+                    # used to treat every overlap as tuple 4's, meaning a
+                    # legitimate reassignment got stuck in human review it
+                    # never needed.
+                    self.hub.ingest_spoke_trace(
+                        "03", env.envelope_id,
+                        thought=f"ctx={ctx!r} reassigned from "
+                                f"{existing['sequence_id']!r} to "
+                                f"{requested_seq!r} by a newer signed "
+                                f"instruction - superseding, not holding; "
+                                f"overlap logged",
+                        result=f"superseded: {existing['sequence_id']!r} -> "
+                              f"{requested_seq!r}")
+                    self.hub.send(_env("03", "14", "interaction.log", ctx,
+                                       {"kind": "sequence_reassigned",
+                                        "previous_sequence_id": existing["sequence_id"],
+                                        "new_sequence_id": requested_seq}))
+                    # falls through to the fresh-assignment path below -
+                    # the new instruction replaces the old one outright
+                else:
+                    # tuple 4: two sequences eligible for one lead -> run
+                    # neither until the human picks, never stack
+                    self.hub.ingest_spoke_trace(
+                        "03", env.envelope_id,
+                        thought=f"ctx={ctx!r} already running "
+                                f"{existing['sequence_id']!r}; new request for "
+                                f"{requested_seq!r} - two sequences eligible, "
+                                f"running NEITHER until human picks (never "
+                                f"stack), overlap logged",
+                        result="held: overlapping sequences")
+                    self.hub.send(_env("03", "queue", "clarification.request", ctx,
+                                       {"reason": "overlapping sequences",
+                                        "existing": existing["sequence_id"],
+                                        "requested": requested_seq}))
+                    self.active_sequences[ctx] = {**existing, "paused": True,
+                                                  "overlap_with": requested_seq}
+                    return
 
             self.active_sequences[ctx] = {"sequence_id": requested_seq,
                                           "paused": False, "touch_count": 0,

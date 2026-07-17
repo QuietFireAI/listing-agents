@@ -313,9 +313,18 @@ class Spoke02LeadQualification:
                                   {"client_context_id": ctx, "score": score,
                                    "sla_s": self.hot_lead_sla_seconds})
             elif tier == "WARM":
+                # tuple 10 (Agent 03's DECISIONS.md): "two sequences would
+                # target one context... newest SIGNED instruction wins" -
+                # a rescore-triggered nurture assignment is exactly that: a
+                # deliberate, later re-evaluation superseding whatever was
+                # running, not an ambiguous simultaneous eligibility
+                # conflict (Agent 03's tuple 4, a different scenario -
+                # confirmed distinct 2026-07-16). This is the actual
+                # distinguishing signal Agent 03 needs and never had.
                 self.hub.send(_env("02", "03", "lead.nurture", ctx,
                                    {"tier": tier, "score": score,
-                                    "consent": payload.get("consent")}))
+                                    "consent": payload.get("consent"),
+                                    "reassignment": env.intent == "lead.rescored"}))
             elif tier == "COLD":
                 pass  # archived via the interaction.log below, never deleted
             elif tier == "UNKNOWN":
