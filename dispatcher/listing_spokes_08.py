@@ -53,7 +53,13 @@ class Spoke08DocumentCollection:
          file a substitute
       2. document unreadable -> request re-send, log raw error
       3. two versions of one document conflict -> keep both + flag, never pick
-      4. sensitive doc from unexpected sender -> quarantine, verify before filing
+      4. sensitive doc from unexpected sender -> quarantine, verify before
+         filing. Fixed 2026-07-16: an unconfigured expected-sender
+         allowlist used to short-circuit the whole check to False,
+         silently filing a sensitive document with zero sender
+         verification - the opposite of the "fires conservatively" this
+         comment always claimed. Now: unconfigured means unverifiable,
+         and unverifiable means quarantine.
       5. chase attempts exhausted -> escalate, silence never becomes 'received'
       6. document unsigned where signature expected -> status incomplete,
          never file as done
@@ -208,7 +214,29 @@ class Spoke08DocumentCollection:
         sensitive_types = {"preapproval_letter", "proof_of_funds",
                            "closing_settlement_statement"}
         expected = self.expected_senders.get(ctx, {}).get(doc_type)
-        if doc_type in sensitive_types and expected and party_sender not in expected:
+        if doc_type in sensitive_types and not expected:
+            # Real fail-open bug, found in review 2026-07-16: "expected"
+            # being empty/None used to short-circuit the whole condition
+            # to False below, meaning an UNCONFIGURED sender allowlist
+            # skipped verification entirely - the exact opposite of the
+            # "fires conservatively" this comment always claimed. Fixed:
+            # unconfigured means unverifiable, and unverifiable means
+            # quarantine, not silent file.
+            self.hub.ingest_spoke_trace(
+                "08", env.envelope_id,
+                thought=f"{doc_type!r} is sensitive but no expected-sender "
+                        f"allowlist is configured for ctx={ctx!r} - "
+                        f"unverifiable, quarantining rather than filing "
+                        f"with zero sender check",
+                result="quarantined: no_sender_config")
+            self.hub.escalate("escalation.legal_line",
+                              {"client_context_id": ctx,
+                               "trigger": f"sensitive document {doc_type!r} "
+                                         f"received with no expected-sender "
+                                         f"configuration to verify against",
+                               "agent": "08"})
+            return
+        if doc_type in sensitive_types and party_sender not in expected:
             self.hub.ingest_spoke_trace(
                 "08", env.envelope_id,
                 thought=f"{doc_type!r} received from party "

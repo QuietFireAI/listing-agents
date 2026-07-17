@@ -63,10 +63,10 @@ def test_clean_document_files_and_reports_received(tmp_path):
     hub, _ = make_hub(str(tmp_path))
     spoke = Spoke08DocumentCollection(hub)
     hub.on_turn_start()
-    hub.send(doc_submission("d-002", {"doc_type": "preapproval_letter",
+    hub.send(doc_submission("d-002", {"doc_type": "survey",
                                       "opens_correctly": True,
                                       "content_hash": "abc123"}))
-    assert spoke.filed_documents["d-002"][0]["doc_type"] == "preapproval_letter"
+    assert spoke.filed_documents["d-002"][0]["doc_type"] == "survey"
     status = persisted(hub, "doc.status")
     assert status and status[0]["payload"]["status"] == "received"
 
@@ -124,6 +124,24 @@ def test_unexpected_sender_for_sensitive_doc_quarantined(tmp_path):
                                       "opens_correctly": True,
                                       "submitting_party": "someone@random.com"}))
     assert "d-006" not in spoke.filed_documents
+    assert hub.queues["escalation.legal_line"]
+
+
+def test_REGRESSION_unconfigured_sender_allowlist_fails_closed(tmp_path):
+    """Real fail-open bug found in review: 'expected' being empty/None
+    short-circuited the whole condition to False, meaning an
+    UNCONFIGURED sender allowlist skipped verification entirely and
+    silently filed a sensitive document from a totally unverified party.
+    The comment always claimed this "fires conservatively" - it didn't."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke08DocumentCollection(hub)  # no expected_senders at all
+    hub.on_turn_start()
+    hub.send(doc_submission("d-006b", {"doc_type": "preapproval_letter",
+                                       "opens_correctly": True,
+                                       "content_hash": "abc123",
+                                       "submitting_party": "totally-unverified@nowhere.com"}))
+    assert "d-006b" not in spoke.filed_documents, \
+        "a sensitive document must never file with zero sender verification"
     assert hub.queues["escalation.legal_line"]
 
 
@@ -244,7 +262,7 @@ def test_REGRESSION_missing_opens_correctly_fails_closed_to_unreadable(tmp_path)
     hub, _ = make_hub(str(tmp_path))
     spoke = Spoke08DocumentCollection(hub)
     hub.on_turn_start()
-    hub.send(doc_submission("d-012", {"doc_type": "preapproval_letter",
+    hub.send(doc_submission("d-012", {"doc_type": "survey",
                                       "content_hash": "xyz"}))  # no opens_correctly at all
     assert "d-012" not in spoke.filed_documents
     msgs = persisted(hub, "client.message.request")
