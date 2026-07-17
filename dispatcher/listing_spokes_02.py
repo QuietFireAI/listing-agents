@@ -54,7 +54,13 @@ class Spoke02LeadQualification:
          conflict logged
       5. tier oscillates a third time -> human review
       6. supplied rubric conflicts with a tuple -> tuple wins, conflict
-         recorded verbatim, flagged - never silently picked
+         recorded verbatim, flagged - never silently picked. Fixed
+         2026-07-17: tuple-governed behaviors (demands_human, agent_
+         shopping) have no representation in the rubric schema - only
+         REQUIRED_RUBRIC_KEYS are ever read, so an extra/unexpected key
+         attempting to encode conflicting behavior was silently ignored
+         before. Now flagged as a spec finding when it happens, not a
+         silent no-op - the tuple still wins structurally either way.
       7. financing letter present but expired -> treated as no verification
       8. lead is an agent shopping for a client -> flagged, different track
       9. rubric update arrives unsigned -> N/A at this layer: the hub's own
@@ -194,6 +200,36 @@ class Spoke02LeadQualification:
             version = env.payload.get("version")
             if new_rubric and version:
                 missing = REQUIRED_RUBRIC_KEYS - set(new_rubric.keys())
+                # tuple 6: supplied rubric conflicts with a tuple -> tuple
+                # wins, conflict recorded verbatim, flagged - never silently
+                # picked. Fixed 2026-07-17: this agent's tuple-governed
+                # behaviors (demands_human, agent_shopping, etc.) have no
+                # representation in the rubric schema at all - only
+                # REQUIRED_RUBRIC_KEYS are ever read. A rubric with EXTRA,
+                # unexpected keys (e.g. an attempt to make demands_human a
+                # scoring weight rather than an absolute override) was
+                # silently ignored before - the tuple still won structurally,
+                # but nothing ever flagged that the rubric tried something
+                # unexpected. Now surfaced rather than silently dropped.
+                extra = set(new_rubric.keys()) - REQUIRED_RUBRIC_KEYS
+                if extra:
+                    self.hub.ingest_spoke_trace(
+                        "02", env.envelope_id,
+                        thought=f"rubric v{version} has unexpected extra "
+                                f"keys {sorted(extra)} beyond what this "
+                                f"agent's tuples allow it to configure - "
+                                f"the tuple wins regardless (these keys are "
+                                f"never read), but a rubric attempting the "
+                                f"unexpected is a spec finding, not a "
+                                f"silent no-op",
+                        result=f"flagged: extra_rubric_keys={sorted(extra)}")
+                    self.hub.send(_env("02", "queue", "clarification.request",
+                                       env.client_context_id,
+                                       {"reason": "rubric contains keys outside "
+                                                 "what this agent's tuples "
+                                                 "allow it to configure",
+                                        "version": version,
+                                        "extra_keys": sorted(extra)}))
                 if missing:
                     # No tuple covers a partial rubric - root rule applies:
                     # STOP, don't silently complete it with baked-in

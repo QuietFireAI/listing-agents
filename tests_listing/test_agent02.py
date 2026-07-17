@@ -391,6 +391,32 @@ def test_incomplete_rubric_rejected_not_backfilled_with_defaults(tmp_path):
     assert "warm_threshold" in missing_keys_sent
 
 
+# ----------------------------------- THE FIX: tuple 6, extra rubric keys
+def test_rubric_with_extra_keys_flagged_but_still_adopted(tmp_path):
+    """Was: an extra/unexpected key beyond REQUIRED_RUBRIC_KEYS was
+    silently ignored - tuple-governed behaviors (demands_human, agent_
+    shopping) have no representation in the rubric schema at all, so a
+    rubric attempting to encode one would go completely unnoticed."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    q = Spoke02LeadQualification(hub)
+    hub.on_turn_start()
+
+    rubric_with_extra = dict(RUBRIC)
+    rubric_with_extra["demands_human_weight"] = 0  # attempts to reconfigure
+                                                   # a tuple-governed behavior
+    hub.send(sign_config_update(signer, rubric_with_extra, "v-extra"))
+
+    assert q.rubric is not None, "extra keys must not block adoption of an otherwise-complete rubric"
+    assert q.rubric_version == "v-extra"
+    clar = persisted(hub, "clarification.request")
+    assert any("outside what this agent's tuples allow" in c["payload"].get("reason", "")
+              for c in clar)
+    extra_sent = next(c["payload"]["extra_keys"] for c in clar
+                      if "extra_keys" in c["payload"])
+    assert "demands_human_weight" in extra_sent
+
+
 def test_incomplete_rubric_does_not_clobber_a_prior_good_one(tmp_path):
     hub, signer = make_hub(str(tmp_path))
     Spoke14CRMPipeline(hub)
