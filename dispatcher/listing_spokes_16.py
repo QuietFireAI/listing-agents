@@ -32,7 +32,15 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
 class Spoke16AfterCloseReferral:
     """DECISIONS.md tuples implemented directly:
       1. adverse life event on record -> hold the touch, human decides
-      2. opt-out mid-cycle -> halt ALL touches for that contact same-day
+      2. opt-out mid-cycle -> halt ALL touches for that contact same-day.
+         Fixed 2026-07-16: 4 of the 5 touch-generating paths (refi alerts,
+         referral solicitations, review requests, post-close check-ins)
+         silently swallowed a block with zero signal anywhere - only
+         date.trigger produced any record. A human auditing why a contact
+         never got a scheduled touch had nothing to look at. Every blocked
+         touch now logs consistently via interaction.log, whatever the
+         touch type or block reason (opt-out, adverse event, stale, or
+         not on list).
       3. past client signals new business -> lead.captured to 02, never
          negotiate
       4. greeting requested for someone not on the supplied list -> refuse,
@@ -74,6 +82,18 @@ class Spoke16AfterCloseReferral:
             return "stale_contact"
         return None
 
+    def _log_blocked_touch(self, ctx: str, touch_kind: str, block: str):
+        """Was: only date.trigger produced any record when a touch was
+        suppressed - refi alerts, referral solicitations, review requests,
+        and post-close check-ins all silently swallowed a block with zero
+        signal anywhere, regardless of reason. A human auditing why a
+        contact never got their 90-day check-in, or why a refi alert never
+        went out, had nothing to look at. Now every blocked touch logs
+        consistently, whatever the touch type."""
+        self.hub.send(_env("16", "14", "interaction.log", ctx,
+                           {"kind": "touch_blocked", "touch_type": touch_kind,
+                            "reason": block}))
+
     def check_post_close_milestones(self, ctx: str, today: str):
         """Job component (the agent's own FIRST listed one): execute
         check-ins at 30, 90, and 365 days post-close. Found completely
@@ -101,6 +121,7 @@ class Spoke16AfterCloseReferral:
 
         block = self._touch_blocked(ctx)
         if block:
+            self._log_blocked_touch(ctx, "post_close_checkin", block)
             return f"blocked:{block}"
 
         sent.add(due)
@@ -129,6 +150,7 @@ class Spoke16AfterCloseReferral:
                     thought=f"date.trigger {event_type!r} for ctx={ctx!r} "
                             f"blocked: {block} - no touch sent",
                     result=f"blocked: {block}")
+                self._log_blocked_touch(ctx, "date_trigger_greeting", block)
                 if block == "not_on_supplied_list":
                     self.hub.send(_env("16", "queue", "clarification.request",
                                        ctx, {"reason": "greeting requested for "
@@ -187,6 +209,7 @@ class Spoke16AfterCloseReferral:
                     return
                 block = self._touch_blocked(ctx)
                 if block:
+                    self._log_blocked_touch(ctx, "refi_rate_alert", block)
                     return
                 # states the fact, never advice
                 self.hub.send(_env("16", "11", "client.message.request", ctx,
@@ -197,6 +220,7 @@ class Spoke16AfterCloseReferral:
             if "referral_solicitation_due" in payload:
                 block = self._touch_blocked(ctx)
                 if block:
+                    self._log_blocked_touch(ctx, "referral_solicitation", block)
                     return
                 self.hub.send(_env("16", "11", "client.message.request", ctx,
                                    {"template": "referral_solicitation"}))
@@ -204,6 +228,7 @@ class Spoke16AfterCloseReferral:
             if "review_request_due" in payload:
                 block = self._touch_blocked(ctx)
                 if block:
+                    self._log_blocked_touch(ctx, "review_request", block)
                     return
                 self.hub.send(_env("16", "11", "client.message.request", ctx,
                                    {"template": "review_request"}))

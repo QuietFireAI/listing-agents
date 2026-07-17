@@ -188,6 +188,15 @@ def test_referral_solicitation_respects_touch_gate(tmp_path):
     hub.send(config_update(signer, "n-006", {"referral_solicitation_due": True}))
     assert not persisted(hub, "client.message.request")  # not on list
 
+    # THE FIX: a blocked touch must actually be logged, not silently
+    # swallowed - a human auditing why a solicitation never went out
+    # needs a real record.
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("kind") == "touch_blocked"
+              and l["payload"].get("touch_type") == "referral_solicitation"
+              and l["payload"].get("reason") == "not_on_supplied_list"
+              for l in logs)
+
     hub.send(config_update(signer, "n-006", {"client_list_entry": {"name": "Bob"}}))
     hub.send(config_update(signer, "n-006", {"referral_solicitation_due": True}))
     sends = persisted(hub, "client.message.request")
@@ -241,3 +250,8 @@ def test_post_close_checkin_respects_touch_gate(tmp_path):
     hub.send(txn)
     result = spoke.check_post_close_milestones("n-001", "2026-07-31")
     assert result == "blocked:opted_out"
+    logs = persisted(hub, "interaction.log")
+    assert any(l["payload"].get("kind") == "touch_blocked"
+              and l["payload"].get("touch_type") == "post_close_checkin"
+              and l["payload"].get("reason") == "opted_out"
+              for l in logs)
