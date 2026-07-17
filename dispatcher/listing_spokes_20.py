@@ -46,6 +46,18 @@ class Spoke20SocialMediaMonitoring:
         self.pending_drafts: dict[str, dict] = {}  # envelope_id-keyed via in_reply_to
         hub.register("20", self.handle)
 
+    # NOT implemented, found during review 2026-07-16: SKILL.md documents
+    # 'OUT -> 03 Lead Nurture | Engagement/behavioral signal |
+    # behavioral.signal' as a legal edge (routes.json confirms 20 is a
+    # legal sender), but nothing in this class ever sends it. Unlike
+    # Agent 12 (which has a real, quantified platform.metrics.
+    # engagement_value to compare against spike_threshold), social.mention
+    # carries no engagement-quantifying field anywhere in its schema or
+    # test fixtures - there's no basis to decide WHEN a social mention
+    # should feed back into nurture as a behavioral signal versus just
+    # being logged. Implementing a threshold/field that doesn't exist
+    # would be inventing business logic this review won't guess at.
+
     def _pricing_legal_hit(self, text: str) -> str | None:
         low = text.lower()
         for w in _PRICING_LEGAL_WORDS:
