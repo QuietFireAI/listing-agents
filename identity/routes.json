@@ -1,5 +1,5 @@
 {
- "version": "0.17",
+ "version": "0.18",
  "vertical": "real-estate-listing-agent",
  "routes": [
   {
@@ -230,6 +230,15 @@
    "intent": "lead.signal",
    "senders": [
     "20"
+   ],
+   "receivers": [
+    "01"
+   ]
+  },
+  {
+   "intent": "lead.inbound",
+   "senders": [
+    "external"
    ],
    "receivers": [
     "01"

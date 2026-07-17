@@ -28,6 +28,18 @@ def signal(ctx, payload, frm="20"):
                                 "verbatim_available": True})
 
 
+def inbound(ctx, payload, frm="external"):
+    """Direct call/web-form/text intake - the route Jeff confirmed was a
+    real gap (2026-07-16): Agent 01's own SKILL.md Role section claims it's
+    the front door for direct contact, but until this fix the only legal
+    route into '01' was lead.signal from '20' (social signals only)."""
+    return Envelope(from_agent=frm, to_agent="01", intent="lead.inbound",
+                    client_context_id=ctx, payload=payload,
+                    provenance={"source": "external-channel-system",
+                                "captured_at": "runtime",
+                                "verbatim_available": True})
+
+
 def persisted(hub, intent=None):
     events = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"]
     return [e for e in events if intent is None or e["intent"] == intent]
@@ -52,6 +64,46 @@ def test_complete_lead_flows_to_lead_captured(tmp_path):
     assert len(lc) == 1
     assert lc[0]["payload"]["name"]["value"] == "Jane Doe"
     assert lc[0]["payload"]["duplicate"] is False
+
+
+# ------------------------------------------- THE FIX: direct intake routing
+def test_direct_call_intake_reaches_01_through_the_real_hub(tmp_path):
+    """Was: no route existed for direct call/web-form/text intake - the
+    agent's own stated primary job. Only lead.signal (sender '20', social
+    signals) was legal. Now: lead.inbound (sender 'external') is a real
+    ratified route, and it runs the identical capture logic."""
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    result = hub.send(inbound("lead-call-001", {
+        "channel": "call", "name": "John Smith", "phone": "555-0199",
+        "property_interest": {"listing_id": "L200"},
+        "timeline": "30 days", "budget": 500000,
+        "preapproval_status": "yes",
+        "consent": {"call": "yes", "text": "yes", "email": "yes"},
+    }))
+    assert result["status"] == "ack"
+
+    lc = persisted(hub, "lead.captured")
+    assert len(lc) == 1
+    assert lc[0]["payload"]["name"]["value"] == "John Smith"
+    assert lc[0]["payload"]["duplicate"] is False
+
+
+def test_lead_inbound_from_illegal_sender_is_rejected(tmp_path):
+    """The route is scoped to 'external' specifically - closed-track
+    doctrine: a swarm agent impersonating an external channel system on
+    this intent is illegal, not silently accepted."""
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    result = hub.send(inbound("lead-call-002", {"channel": "call"}, frm="20"))
+    assert result["status"] not in ("ack", "held")
+    assert not persisted(hub, "lead.captured")
 
 
 # --------------------------------------------------- THE FIX: consent refusal

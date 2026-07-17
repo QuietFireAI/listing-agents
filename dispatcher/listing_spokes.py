@@ -252,7 +252,7 @@ class Spoke01LeadCapture:
         return None
 
     def handle(self, env: Envelope):
-        if env.intent == "lead.signal":
+        if env.intent in ("lead.signal", "lead.inbound"):
             payload = env.payload
             ctx = env.client_context_id
 
