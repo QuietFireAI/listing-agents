@@ -174,6 +174,27 @@ def test_near_miss_pattern_reported_after_third_flag(tmp_path):
     assert pattern[0]["payload"]["count"] == 3
 
 
+# ------------------------- THE FIX: near-miss counter resets after report
+def test_near_miss_counter_resets_no_spam_past_threshold(tmp_path):
+    """Was: the counter never reset, so every single flagged verdict past
+    the threshold triggered its own new report - 6 flags produced 4
+    separate reports (at counts 3/4/5/6), noise rather than the pattern
+    signal this tuple is actually meant to provide."""
+    hub, signer = make_hub(str(tmp_path))
+    Spoke17ComplianceFairHousing(hub)
+    hub.on_turn_start()
+    hub.send(sign_ruleset(signer))
+    for i in range(6):
+        hub.send(review(f"c-011-{i}", {"draft": {"facts": ["adults only"]},
+                                       "content_hash": f"hash2-{i}"}, frm="04"))
+    reports = persisted(hub, "report.package")
+    pattern = [r for r in reports if r["payload"].get("report_type") == "near_miss_pattern"]
+    assert len(pattern) == 2, \
+        "6 flags at threshold 3 should produce exactly 2 pattern reports, not 4"
+    assert pattern[0]["payload"]["count"] == 3
+    assert pattern[1]["payload"]["count"] == 3
+
+
 def test_sla_within_bounds_no_alert(tmp_path):
     hub, signer = make_hub(str(tmp_path))
     spoke = Spoke17ComplianceFairHousing(hub, sla_days=1)

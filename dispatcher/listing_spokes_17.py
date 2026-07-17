@@ -43,7 +43,12 @@ class Spoke17ComplianceFairHousing:
       9. state-specific rule uncertainty -> block + human counsel flag;
          training-level knowledge never clears a legal gate
       10. pattern of near-miss language from one agent -> report the
-          pattern to owner, single verdicts miss drift
+          pattern to owner, single verdicts miss drift. Fixed 2026-07-16:
+          the counter never reset after reporting, so every single
+          subsequent flagged verdict past the threshold triggered its own
+          new report - 6 flags produced 4 separate reports (at counts
+          3/4/5/6), noise rather than a real pattern signal. Now resets
+          after each report.
     """
 
     # TUNABLE (owner-ratified 2026-07-16): sla_days=1,
@@ -199,7 +204,13 @@ class Spoke17ComplianceFairHousing:
                                                  "findings": findings}
 
             # tuple 10: pattern of near-miss language from one agent ->
-            # report the pattern, single verdicts miss drift
+            # report the pattern, single verdicts miss drift. Fixed
+            # 2026-07-16: the counter never reset after reporting, so
+            # every single subsequent flagged verdict past the threshold
+            # triggered its own new report (6 flags produced 4 separate
+            # reports, at counts 3/4/5/6) - noise, not pattern signal.
+            # Reset after reporting so the next report represents a real
+            # new batch of accumulation, not the same one restated.
             if verdict == "flagged":
                 self.near_miss_counts[submitting_agent] = \
                     self.near_miss_counts.get(submitting_agent, 0) + 1
@@ -208,6 +219,7 @@ class Spoke17ComplianceFairHousing:
                                        {"report_type": "near_miss_pattern",
                                         "agent": submitting_agent,
                                         "count": self.near_miss_counts[submitting_agent]}))
+                    self.near_miss_counts[submitting_agent] = 0
 
             self.hub.send(_env("17", submitting_agent, "content.verdict", ctx,
                                {"verdict": verdict, "findings": findings,
