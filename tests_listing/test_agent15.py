@@ -199,7 +199,7 @@ def test_REGRESSION_record_response_was_empty_now_flags_discrepancy(tmp_path):
     resp = Envelope(from_agent="14", to_agent="15", intent="record.response",
                    client_context_id="f-013",
                    payload={"entries": [{"kind": "transaction.closed",
-                                        "payload": {"amount": 11500}}]},
+                                        "payload": {"commission_amount": 11500}}]},
                    provenance={"source": "spoke-14", "captured_at": "runtime",
                                "verbatim_available": True})
     hub.send(resp)
@@ -241,3 +241,34 @@ def test_REGRESSION_report_package_was_empty_now_computes_roi_with_provenance(tm
     assert roi_report["payload"]["roi"] == 3.0  # (4000-1000)/1000
     assert roi_report["payload"]["marketing_spend_source"] == "platform_export"
     assert roi_report["payload"]["referral_attribution_source"] == "crm_referral_data"
+
+
+# ------------- 15 <-> 14 contract: cross-check must receive entries (2026-07-17)
+def test_commission_crosscheck_actually_receives_entries(tmp_path):
+    """15's record.request used to carry dedupe_key, hitting 14's dedupe
+    branch (no 'entries' in the response) - the commission cross-check
+    silently no-opped on every close. This exercises the real 15->14->15
+    round trip and a real mismatch escalation."""
+    from dispatcher.listing_spokes import Spoke14CRMPipeline
+    hub, signer = make_hub(str(tmp_path))
+    spoke15 = Spoke15FinancialTracking(hub)
+    Spoke14CRMPipeline(hub)
+    hub.register("18", lambda env: None)
+    hub.on_turn_start()
+    # 14 logs a transaction.closed with a commission_amount (07's payload shape)
+    hub.send(Envelope(from_agent="07", to_agent="14", intent="transaction.closed",
+                      client_context_id="cc-1",
+                      payload={"closed": True, "commission_amount": 12000},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    # 15 records a DIFFERENT amount, then cross-checks via record.request
+    hub.send(Envelope(from_agent="07", to_agent="15", intent="transaction.closed",
+                      client_context_id="cc-1",
+                      payload={"closed": True, "commission_amount": 11000,
+                               "signed_docs_only": True},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    escalations = [e for e in hub.audit.read()
+                   if e["kind"] == "escalation.raised"
+                   and "does not match 14's logged" in str(e.get("trigger", ""))]
+    assert escalations, "mismatched commission must escalate - it never could before"

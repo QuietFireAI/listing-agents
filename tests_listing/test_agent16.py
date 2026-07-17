@@ -254,3 +254,34 @@ def test_post_close_checkin_respects_touch_gate(tmp_path):
               and l["payload"].get("touch_type") == "post_close_checkin"
               and l["payload"].get("reason") == "opted_out"
               for l in logs)
+
+
+# --------------- 07 -> 16 contract: close_date must actually arrive (2026-07-17)
+def test_post_close_checkins_fire_from_real_07_traffic(tmp_path):
+    """End-to-end: 07's real transaction.closed (closing artifact filed)
+    must carry close_date so 16's 30/90/365 check-ins fire. Before the
+    fix, 07 sent {"closed": True} and every context returned
+    'no_close_date' forever."""
+    from dispatcher.listing_spokes_07 import Spoke07TransactionCoordinator
+    hub, signer = make_hub(str(tmp_path))
+    spoke16 = Spoke16AfterCloseReferral(hub)
+    Spoke07TransactionCoordinator(hub)
+    for a in ("14", "15", "08", "09", "18"):
+        hub.register(a, lambda env: None)
+    hub.on_turn_start()
+    env07 = Envelope(from_agent="human", to_agent="07", intent="config.update",
+                     client_context_id="close-1",
+                     payload={"timeline_init": {"closing": "2026-07-01"}},
+                     provenance={"source": "human", "captured_at": "runtime",
+                                 "verbatim_available": True})
+    signer.sign(env07)
+    hub.send(env07)
+    hub.send(Envelope(from_agent="08", to_agent="07", intent="doc.status",
+                      client_context_id="close-1",
+                      payload={"milestone": "closing", "artifact_on_file": True,
+                               "artifact_ref": "hash-1"},
+                      provenance={"source": "spoke-08", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert spoke16.closed_transactions["close-1"]["close_date"] == "2026-07-01"
+    hub.send(config_update(signer, "close-1", {"client_list_entry": {"name": "Jane"}}))
+    assert spoke16.check_post_close_milestones("close-1", "2026-08-05") == "sent:30"

@@ -82,8 +82,14 @@ class Spoke15FinancialTracking:
             else:
                 self.commissions[ctx] = {"amount": amount, "signed": True,
                                          "source": source}
-            self.hub.send(_env("15", "14", "record.request", ctx,
-                               {"dedupe_key": ctx}))
+            # Contract fix, found 2026-07-17: this used to send
+            # {"dedupe_key": ctx}, which hits 14's DEDUPE branch and
+            # returns {known, consent, property_interests} - no "entries"
+            # at all. The record.response handler below reads "entries",
+            # so the commission cross-check could NEVER receive data and
+            # silently no-opped on every close. Same defect class as
+            # 19->13. A bare record.request hits 14's full-entries branch.
+            self.hub.send(_env("15", "14", "record.request", ctx, {}))
             self.hub.send(_env("15", "18", "agent.status", ctx,
                                {"waiting_on": "commission_crosscheck",
                                 "since": payload.get("today")}))
@@ -102,9 +108,14 @@ class Spoke15FinancialTracking:
             entries = payload.get("entries", [])
             if commission is None or not entries:
                 return
-            logged_amounts = [e["payload"].get("amount") for e in entries
+            # Field traced by hand against 14's real storage: 14 appends
+            # transaction.closed entries as {"kind": intent, "payload":
+            # 07's payload}, and 07's payload field is commission_amount -
+            # there is no "amount" key anywhere in that chain (the prior
+            # read of e["payload"]["amount"] matched nothing, ever).
+            logged_amounts = [e["payload"].get("commission_amount") for e in entries
                              if e.get("kind") == "transaction.closed"
-                             and e["payload"].get("amount") is not None]
+                             and e["payload"].get("commission_amount") is not None]
             if logged_amounts and commission["amount"] not in logged_amounts:
                 self.hub.escalate("escalation.legal_line",
                                   {"client_context_id": ctx,

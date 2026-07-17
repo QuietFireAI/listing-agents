@@ -339,17 +339,34 @@ class Spoke07TransactionCoordinator:
                 if entry:
                     entry["satisfied"] = True
                     entry["artifact"] = payload.get("artifact_ref")
+                # Contract fix, found 2026-07-17 (same defect class as the
+                # 19->13 empty-contract bug): this send carried only
+                # {"closed": True}. 16 reads close_date (without it the
+                # 30/90/365 post-close check-ins NEVER fire) and 15 reads
+                # commission_amount (without it every commission record is
+                # None-driven). close_date is 07's own tracked truth - the
+                # closing milestone's deadline. commission_amount has no
+                # upstream source anywhere in this identity yet; sending
+                # it when present (rather than inventing one) keeps that
+                # gap visible instead of papered over - see the review
+                # findings, owner decision required on its origin.
+                closed_payload = {"closed": True,
+                                  "close_date": (entry or {}).get("deadline"),
+                                  "commission_amount":
+                                      payload.get("commission_amount"),
+                                  "signed_docs_only":
+                                      payload.get("signed_docs_only", False)}
                 self.hub.ingest_spoke_trace(
                     "07", env.envelope_id,
                     thought="closing artifact on file - executing "
                             "transaction.closed to 16/14/15, triggering P10",
                     result="transaction.closed issued")
                 self.hub.send(_env("07", "16", "transaction.closed", ctx,
-                                   {"closed": True}))
+                                   closed_payload))
                 self.hub.send(_env("07", "14", "transaction.closed", ctx,
-                                   {"closed": True}))
+                                   closed_payload))
                 self.hub.send(_env("07", "15", "transaction.closed", ctx,
-                                   {"closed": True}))
+                                   closed_payload))
                 return
 
             if entry is not None and payload.get("artifact_on_file"):
