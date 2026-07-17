@@ -1,9 +1,14 @@
 """dispatcher.hub - Agent 00 as running code (Day 1).
 
-Pipeline per envelope, in doctrine order:
+Pipeline per envelope, in actual code order (fixed 2026-07-17 - this
+docstring previously described a different order than the real code ran):
+  idempotency dedupe -> loop protection (per context+intent threshold) ->
   schema validate -> signature check (authority intents) -> tuple legality
-  (closed track) -> idempotency dedupe -> PERSIST to audit -> sequence
-  assignment -> deliver to registered handler -> ACK (only now).
+  (closed track) -> PERSIST to audit -> sequence assignment -> pre-response-
+  selfcheck exit gate -> deliver to registered handler -> ACK (only now).
+Idempotency runs first deliberately: a retry of an already-acked envelope
+(same envelope_id) is the normal ack-loss case and must dedupe before any
+other check can reject it on grounds that no longer apply to a duplicate.
 Failures never vanish: rejects carry raw reasons; unroutable-but-well-formed
 traffic holds live in the clarification queue (restricted-speed: held is
 acked-received at transport level, never dropped, never advanced).
@@ -52,9 +57,13 @@ class Hub:
         # second opinions on drift-flagged reflections. Both are deployment
         # config; UNARMED IS AUDITED AT BOOT, once, never silently off.
         # loop_threshold: max envelopes per (client_context_id, intent) before
-        # the loop suspends into clarification. 20 is PROVISIONAL AND
-        # ARBITRARY (no spec number, no empirical basis) - after-action data
-        # sets the real value, same discipline as MANNERS N=10.
+        # the loop suspends into clarification. RATIFIED (owner, 2026-07-17):
+        # 20 stands as a deliberate placeholder - no empirical basis existed
+        # at ratification (no real production traffic yet to measure a
+        # normal repeat-count against), and none was invented to justify it.
+        # Revisit once real after-action data exists; until then this is a
+        # decided value, not an open question. Same discipline as MANNERS
+        # N=10, ratified the same day for the same reason.
         self.routes = routes
         self.audit = audit
         self.verify_sig = signature_verifier or (lambda env: False)
@@ -124,7 +133,26 @@ class Hub:
         results; hub centrality makes this the monitoring point."""
         rec = {"agent": agent_id, "envelope_id": envelope_id,
                "thought": thought, "result": result}
-        from agent_open_mind import taint_check   # pillar = single source
+        try:
+            from agent_open_mind import taint_check   # pillar = single source
+        except ImportError:
+            # Same unarmed discipline as before-turn: pillar absent is
+            # DECLARED on the audit log, once per hub, never silent - and
+            # never a per-message crash. Before this fix, a missing
+            # agent_open_mind package raised ModuleNotFoundError inside
+            # every handler delivery, dead-lettering 100% of swarm traffic
+            # with a generic crash reason (fresh-clone verified 2026-07-17:
+            # 98 test failures, all this one line). Fail-closed must mean
+            # "held and named", not "everything dies undiagnosed".
+            if not getattr(self, "_aom_unarmed_declared", False):
+                self._aom_unarmed_declared = True
+                self.audit.append("agentopenmind.unarmed",
+                                  {"reason": "agent_open_mind package not "
+                                             "installed - taint gate off, "
+                                             "declared not silent"})
+            self.spoke_traces.append(rec)
+            self.audit.append("spoke.trace", rec)
+            return
         gate = taint_check(rec)
         if gate["tainted"]:
             # structural, at the moment of ingestion, not deferred to
@@ -133,7 +161,7 @@ class Hub:
             flag = {"agent": agent_id, "envelope_id": envelope_id,
                     "tainted": True,
                     "reason": "absent thought trace at ingestion - tainted, held for review"}
-            self.queues["integrity.violation"].append(flag)
+            self.queue_and_notify("integrity.violation", flag)
             self.audit.append("agentopenmind.tainted", flag)
         self.spoke_traces.append(rec)
         self.audit.append("spoke.trace", rec)
@@ -142,8 +170,10 @@ class Hub:
 
     def manners_reinjection(self, trigger: str, position: str = "") -> None:
         """MANNERS.md anti-fade mechanism, instrumented: phase_gate and
-        post_compaction are CONSTANTS; turn_backstop is the N=10 PROVISIONAL
-        backstop. Counts and positions feed after-action fade-tracking."""
+        post_compaction are CONSTANTS; turn_backstop is the N=10 backstop,
+        RATIFIED (owner, 2026-07-17) as a deliberate placeholder pending
+        real fade-rate data. Counts and positions feed after-action
+        fade-tracking."""
         if trigger not in self.MANNERS_TRIGGERS:
             raise ValueError(f"unknown manners trigger {trigger!r}; "
                              f"constants are {self.MANNERS_TRIGGERS}")
@@ -172,6 +202,45 @@ class Hub:
     def register(self, agent_id: str, handler: Callable[[Envelope], None]):
         self.handlers[agent_id] = handler
 
+    def queue_and_notify(self, queue_name: str, record: dict) -> None:
+        """Real gap, found 2026-07-17: the 'append to a queue, then notify
+        the human channel' pattern was hand-reimplemented at 5 separate
+        call sites across this codebase (hub.py's own unknown-route hold,
+        pillars.py's exit_gate FAIL, territory.py's transfer-refusal,
+        analysis.py's tainted-trace backstop, plus the one that WAS fixed
+        - hub.py's 'queue' virtual-destination delivery, the original bug
+        this whole mechanism exists to prevent). Only that one call site
+        ever actually called human_notifier - the other four recreated
+        the exact same silent-queue bug in different code, because the
+        append+notify pairing lived nowhere as a single, reusable unit.
+        Every one of those callers is now updated to call this instead of
+        reimplementing the pattern by hand."""
+        self.queues.setdefault(queue_name, []).append(record)
+        if self.human_notifier is not None:
+            self.human_notifier(queue_name, record)
+            self.audit.append("human.notified", {**record, "queue": queue_name})
+
+    def resume_loop_suspension(self, client_context_id: str, intent: str) -> dict:
+        """Real gap, found 2026-07-17: once a (context, intent) pair
+        crossed loop_threshold, it was suspended PERMANENTLY - nothing
+        anywhere ever reset loop_counts, not even a manual path for a
+        human who reviewed the suspension and decided it wasn't actually
+        a runaway (e.g. a genuinely high-volume, healthy long-running
+        interaction that happened to cross an arbitrary placeholder
+        threshold). Restricted-Speed Doctrine says resumption requires
+        explicit human/dispatcher direction and never self-restores -
+        that phrasing implies resumption IS possible, just never
+        automatic. This is that explicit path: a human decision, not a
+        silent auto-clear, and it's audited like every other override in
+        this hub."""
+        key = (client_context_id, intent)
+        had_count = self.loop_counts.pop(key, None)
+        self.audit.append("loop.resumed",
+                          {"client_context_id": client_context_id,
+                           "intent": intent, "prior_count": had_count})
+        return {"status": "resumed", "client_context_id": client_context_id,
+                "intent": intent, "prior_count": had_count}
+
     def send(self, env: Envelope) -> dict:
         # 0. idempotency FIRST - a retry of an acked envelope (same
         # envelope_id, hub-stamped sequence riding along) is the normal
@@ -186,7 +255,7 @@ class Hub:
         key = (env.client_context_id, env.intent)
         self.loop_counts[key] = self.loop_counts.get(key, 0) + 1
         if self.loop_counts[key] > self.loop_threshold:
-            self.queues["clarification.request"].append(env.to_record())
+            self.queue_and_notify("clarification.request", env.to_record())
             self.audit.append("loop.suspended",
                               {"client_context_id": env.client_context_id,
                                "intent": env.intent,
@@ -203,7 +272,7 @@ class Hub:
         # 2. authority signature - the signature, not the sender field, is trust
         if is_authority(env.intent):
             if not self.verify_sig(env):
-                self.queues["integrity.violation"].append(env.to_record())
+                self.queue_and_notify("integrity.violation", env.to_record())
                 self.audit.append("integrity.violation",
                                   {"envelope_id": env.envelope_id,
                                    "reason": "authority intent without verified signature"})
@@ -214,7 +283,7 @@ class Hub:
             if self.signer_registry is not None:
                 v = self.signer_registry.check(env)
                 if not v.ok:
-                    self.queues["integrity.violation"].append(env.to_record())
+                    self.queue_and_notify("integrity.violation", env.to_record())
                     self.audit.append("integrity.violation",
                                       {"envelope_id": env.envelope_id,
                                        "reason": f"signer registry: {v.reason}"})
@@ -238,7 +307,7 @@ class Hub:
                 return self._reject(
                     env, f"tuple illegal: {env.from_agent} -> {env.intent} -> {env.to_agent}")
             # well-formed but unknown route: restricted-speed HOLD, never drop
-            self.queues["clarification.request"].append(env.to_record())
+            self.queue_and_notify("clarification.request", env.to_record())
             self.audit.append("hold.clarification", env.to_record())
             self._reflect(env.envelope_id,
                           f"intent {env.intent!r} not on any track; doctrine says hold live",
@@ -274,14 +343,9 @@ class Hub:
             # and notify immediately - unexpected/unrecognized values
             # deserve the same active-push urgency as an escalation, not a
             # passive list nobody is watching.
-            self.queues.setdefault(env.intent, []).append(env.to_record())
+            self.queue_and_notify(env.intent, env.to_record())
             self.audit.append("hold.queued", {"envelope_id": env.envelope_id,
                                               "intent": env.intent})
-            if self.human_notifier is not None:
-                self.human_notifier(env.intent, env.to_record())
-                self.audit.append("human.notified", {"envelope_id": env.envelope_id,
-                                                      "intent": env.intent,
-                                                      "queue": env.intent})
             return {"status": "held", "queue": env.intent,
                     "envelope_id": env.envelope_id}
         handler = self.handlers.get(env.to_agent)

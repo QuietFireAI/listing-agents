@@ -85,7 +85,8 @@ class Spoke18CalendarTask:
 
     # TUNABLE (owner-ratified 2026-07-16): max_events_per_day=8.
     # See docs/TUNING_MANUAL.md to change.
-    def __init__(self, hub, max_events_per_day: int = 8):
+    def __init__(self, hub, max_events_per_day: int = 8,
+                 no_show_grace_minutes: int = 60):
         self.hub = hub
         self.calendar: dict[str, list[dict]] = {}  # day -> events
         self.protected_blocks: dict[str, dict] = {}  # event_id -> {day, source: "07"}
@@ -93,6 +94,16 @@ class Spoke18CalendarTask:
         self.waiting: dict[str, dict] = {}  # (agent, ctx, waiting_on) key -> status record
         self.recurring_task_last_seen: dict[str, str] = {}  # task_id -> last completion date
         self.max_events_per_day = max_events_per_day
+        # SKILL.md edge, ratified but unimplemented until 2026-07-17:
+        # OUT -> 06 | No-show detected by calendar (missed slot, no
+        # confirmation) | showing.no_show. State for that detection:
+        self.showings: dict[str, dict] = {}  # ctx -> {time, day}
+        self.showing_followup_seen: set[str] = set()  # ctxs where 06 signaled post-showing
+        self.no_shows_reported: set[str] = set()  # never report the same slot twice
+        # PROVISIONAL, no empirical basis - how long past the slot before
+        # silence counts as a calendar-detected no-show. TUNING_MANUAL entry
+        # added in the same commit, per standing KPI.
+        self.no_show_grace_minutes = no_show_grace_minutes
         hub.register("18", self.handle)
 
     def _wait_key(self, agent: str, ctx: str, waiting_on: str) -> str:
@@ -103,6 +114,12 @@ class Spoke18CalendarTask:
         payload = env.payload
 
         if env.intent == "agent.status":
+            # Any post-showing signal from 06 (feedback wait opened OR
+            # resolved) means 06 processed an outcome for this showing -
+            # the calendar-silence no-show detector must not fire for it.
+            if env.from_agent == "06" and \
+                    payload.get("waiting_on") == "showing_feedback":
+                self.showing_followup_seen.add(ctx)
             key = self._wait_key(env.from_agent, ctx, payload.get("waiting_on", ""))
             if payload.get("resolved"):
                 self.waiting.pop(key, None)
@@ -173,6 +190,8 @@ class Spoke18CalendarTask:
             event_id = payload.get("event_id", f"{day}-{len(day_events)}")
             day_events.append({"event_id": event_id, "source": env.from_agent,
                               "protected": protected, "time": time})
+            if env.from_agent == "06" and payload.get("event") == "showing":
+                self.showings[ctx] = {"time": time, "day": day}
             if protected:
                 self.protected_blocks[event_id] = {"day": day, "source": env.from_agent}
             self.hub.send(_env("18", "14", "interaction.log", ctx,
@@ -245,6 +264,45 @@ class Spoke18CalendarTask:
             if event_id in self.protected_blocks:
                 del self.protected_blocks[event_id]
             return
+
+    def check_showing_no_show(self, ctx: str, now_iso: str):
+        """SKILL.md ratified edge, implemented 2026-07-17 (was a declared
+        route with zero code behind it): a showing whose slot passed by
+        more than no_show_grace_minutes with NO post-showing signal from
+        06 is a calendar-detected no-show. 11's showing.no_show path only
+        covers no-shows a client actively mentions; this covers the ones
+        nobody mentioned at all. Called by the same scheduler/sweep layer
+        as check_recurring_task - 18 never invents the current time.
+        Grace elapsed is computed HERE from the stored slot time, never
+        pre-computed by the caller (the exact decorative-SLA defect class
+        Agent 17's pending_reviews had)."""
+        import datetime
+        showing = self.showings.get(ctx)
+        if showing is None or not showing.get("time"):
+            return "no_showing_or_no_time"
+        if ctx in self.no_shows_reported:
+            return "already_reported"
+        if ctx in self.showing_followup_seen:
+            return "outcome_already_processed"
+        slot = datetime.datetime.fromisoformat(showing["time"])
+        now = datetime.datetime.fromisoformat(now_iso)
+        elapsed_min = (now - slot).total_seconds() / 60.0
+        if elapsed_min < self.no_show_grace_minutes:
+            return "within_grace"
+        self.no_shows_reported.add(ctx)
+        self.hub.ingest_spoke_trace(
+            "18", f"no-show-{ctx}",
+            thought=f"showing slot {showing['time']!r} passed "
+                    f"{elapsed_min:.0f}min ago with no post-showing signal "
+                    f"from 06 - calendar-detected no-show, reporting to 06; "
+                    f"is_agent_no_show stays False (silence proves absence "
+                    f"of confirmation, not who failed to appear)",
+            result="showing.no_show sent to 06")
+        self.hub.send(_env("18", "06", "showing.no_show", ctx,
+                           {"detected_by": "calendar",
+                            "today": showing.get("day"),
+                            "is_agent_no_show": False}))
+        return "reported"
 
     def check_recurring_task(self, task_id: str, today: str, expected_cadence_days: int):
         """Tuple 8: a recurring task with no completion events is surfaced,

@@ -51,6 +51,7 @@ them inline.
 | 17 (Compliance) | `sla_days` | `1` | Turnaround SLA for a compliance verdict before an SLA-breach alert fires |
 | 17 (Compliance) | `near_miss_pattern_threshold` | `3` | Flagged verdicts from the same submitting agent before a pattern report goes to the owner |
 | 18 (Calendar & Task) | `max_events_per_day` | `8` | Calendar capacity before a day is treated as overloaded |
+| 18 (Calendar & Task) | `no_show_grace_minutes` | `60` | Minutes past a showing slot with no post-showing signal from 06 before 18 reports a calendar-detected `showing.no_show`. PROVISIONAL - no empirical basis, revisit with after-action data |
 
 ## Found 2026-07-17, not yet reviewed by owner (dict/set-shaped, missed in the first sweep)
 

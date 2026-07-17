@@ -614,6 +614,16 @@ class Spoke01LeadCapture:
                 result="record.request issued")
             self.hub.send(_env("01", "14", "record.request", ctx,
                                {"dedupe_key": ctx}))
+            # SKILL.md edge, ratified: OUT -> 18 | Wait-state signal (dedupe
+            # pending) | agent.status. Gap found 2026-07-17: the agent.status
+            # retrofit reached 02-20 but never touched 01 - the oldest agent,
+            # exactly the build-order-vs-rigor inversion SESSION_HANDOFF_5
+            # warned about. Without this, a lead stuck waiting on CRM dedupe
+            # was invisible to 18's briefing until it became a missed
+            # deadline.
+            self.hub.send(_env("01", "18", "agent.status", ctx,
+                               {"waiting_on": "crm_dedupe_response",
+                                "since": payload.get("today")}))
             return
 
         if env.intent == "record.response":
@@ -630,6 +640,11 @@ class Spoke01LeadCapture:
                                    ctx, {"reason": "uncorrelated record.response"}))
                 return
             self.retry_count.pop(ctx, None)
+            # Wait opened at record.request time is now over - clear it so
+            # 18's briefing never shows a resolved dedupe as still pending.
+            self.hub.send(_env("01", "18", "agent.status", ctx,
+                               {"waiting_on": "crm_dedupe_response",
+                                "resolved": True}))
             payload = dict(pending)
             raw_inputs = payload.pop("raw_inputs")
             notes = payload.pop("notes")
@@ -713,4 +728,10 @@ class Spoke01LeadCapture:
                            {"reason": "record.response never returned after "
                                      "a retry - handoff.failed, lead held "
                                      "undeduped"}))
+        # The wait state moves from "pending" to "escalated" - clear it in
+        # 18 so the same stuck lead isn't reported twice through two
+        # different channels (wait briefing AND clarification queue).
+        self.hub.send(_env("01", "18", "agent.status", ctx,
+                           {"waiting_on": "crm_dedupe_response",
+                            "resolved": True}))
         return "handoff.failed"

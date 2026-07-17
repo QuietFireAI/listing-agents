@@ -1,0 +1,41 @@
+# listing-agents
+
+The listing-agents identity: dispatcher-agents wearing the residential
+real-estate listing domain. 20 spoke agents, one hub, one closed track -
+only the tuples in `identity/routes.json` are legal, the hub lines every
+switch, and the hash-chained audit log is the single source of truth.
+
+The ratified source for every agent's SKILL.md, DECISIONS.md, and the
+routes themselves is `listing-agents-blueprint`. This repo is the working
+build generated against that blueprint - never hand-edit one without the
+other (fork drift is a named defect class).
+
+## Install
+
+```
+git clone https://github.com/QuietFireAI/listing-agents.git
+cd listing-agents
+pip install -r requirements.txt
+python -m pytest tests_listing/
+```
+
+`requirements.txt` installs the six-pillar detection tier from its own
+repositories. Without it the swarm still routes - every absent pillar
+declares itself UNARMED on the audit log rather than crashing - but a
+production deployment should run fully armed. Do not vendor or copy the
+pillar code into this repo; import-from-package is the anti-drift
+mechanism.
+
+## Layout
+
+- `dispatcher/` - vendored dispatcher-agents core (hub, core, pillars,
+  analysis, kpi, territory, loader, signer_registry) plus the 20
+  `listing_spokes*.py` identity spokes
+- `identity/routes.json` - the closed track: every legal
+  (sender, intent, receiver) tuple
+- `config/` - business-content configuration (templates, cadences,
+  milestones, vendor panel, authority signers)
+- `docs/TUNING_MANUAL.md` - every configurable numeric parameter, standing
+  KPI: updated in the same commit that introduces any tunable
+- `tests_listing/` - the full suite; run it from a fresh clone before
+  trusting any "done" claim, including this README's

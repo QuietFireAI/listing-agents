@@ -3,7 +3,6 @@ import sys
 import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, "/home/claude/pillars_pth")
 
 from dispatcher.core import Envelope, Routes, AuditLog
 from dispatcher.hub import Hub
@@ -203,3 +202,66 @@ def test_INTEGRATION_vendor_and_document_waits_surface_in_briefing(tmp_path):
     waiting_on2 = {w["waiting_on"] for w in briefing2["currently_waiting"]}
     assert "document:inspection" not in waiting_on2
     assert "vendor_scheduling:inspection" in waiting_on2  # still waiting on this one
+
+
+# --------------------------------------- calendar-detected no-show (ratified)
+# SKILL.md edge OUT -> 06 showing.no_show existed in routes.json with ZERO
+# code behind it until 2026-07-17. These tests exercise the implementation.
+def _showing(hub, ctx, iso_time):
+    hub.send(cal_event(ctx, {"event": "showing", "time": iso_time,
+                             "day": iso_time.split("T")[0],
+                             "timezone_confirmed": True}))
+
+
+def _status_from_06(ctx, waiting_on="showing_feedback", resolved=False):
+    p = {"waiting_on": waiting_on}
+    if resolved:
+        p["resolved"] = True
+    return Envelope(from_agent="06", to_agent="18", intent="agent.status",
+                    client_context_id=ctx, payload=p,
+                    provenance={"source": "spoke-06", "captured_at": "runtime",
+                                "verbatim_available": True})
+
+
+def _no_show_sends(hub):
+    return [e for e in hub.audit.read()
+            if e["kind"] == "envelope.persisted"
+            and e["intent"] == "showing.no_show"
+            and e["from_agent"] == "18" and e["to_agent"] == "06"]
+
+
+def test_no_show_reported_after_grace_silence(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke18CalendarTask(hub)
+    hub.register("06", lambda env: None)  # capture side not under test
+    hub.on_turn_start()
+    _showing(hub, "s1", "2026-07-17T10:00:00")
+    assert spoke.check_showing_no_show("s1", "2026-07-17T10:30:00") == "within_grace"
+    assert spoke.check_showing_no_show("s1", "2026-07-17T11:30:00") == "reported"
+    sends = _no_show_sends(hub)
+    assert len(sends) == 1
+    assert sends[0]["payload"]["detected_by"] == "calendar"
+    assert sends[0]["payload"]["is_agent_no_show"] is False
+    assert sends[0]["payload"]["today"] == "2026-07-17"
+    # never report the same slot twice
+    assert spoke.check_showing_no_show("s1", "2026-07-17T12:30:00") == "already_reported"
+    assert len(_no_show_sends(hub)) == 1
+
+
+def test_no_show_suppressed_when_06_processed_an_outcome(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke18CalendarTask(hub)
+    hub.on_turn_start()
+    _showing(hub, "s2", "2026-07-17T10:00:00")
+    hub.send(_status_from_06("s2"))  # 06 heard something post-showing
+    assert spoke.check_showing_no_show("s2", "2026-07-17T13:00:00") == \
+        "outcome_already_processed"
+    assert _no_show_sends(hub) == []
+
+
+def test_no_show_ignores_unknown_or_timeless_showings(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke18CalendarTask(hub)
+    hub.on_turn_start()
+    assert spoke.check_showing_no_show("nope", "2026-07-17T13:00:00") == \
+        "no_showing_or_no_time"

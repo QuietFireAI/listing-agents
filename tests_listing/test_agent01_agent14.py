@@ -6,7 +6,6 @@ import sys
 import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, "/home/claude/pillars_pth")
 
 from dispatcher.core import Envelope, Routes, AuditLog
 from dispatcher.hub import Hub
@@ -639,3 +638,51 @@ def test_no_merge_candidates_when_contacts_genuinely_differ(tmp_path):
                                  "phone": "555-2222", "consent": {"call": "yes"}}))
     proposals = crm.check_merge_candidates()
     assert proposals == []
+
+
+# ------------------------------------------------- 01 -> 18 wait-state edge
+# SKILL.md ratified edge, implemented 2026-07-17: the agent.status retrofit
+# reached 02-20 but skipped 01 entirely (routes.json declared 01 a sender;
+# zero code sent it).
+def test_agent01_opens_dedupe_wait_on_record_request(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+    hub.send(signal("lead-w1", {
+        "channel": "call", "name": "Jane Doe", "phone": "555-0101",
+        "property_interest": {"listing_id": "L100"},
+        "timeline": "60 days", "budget": 450000,
+        "preapproval_status": "yes", "today": "2026-07-17",
+        "consent": {"call": "yes", "text": "yes", "email": "yes"},
+    }))
+    waits = [e for e in persisted(hub, "agent.status")
+             if e["from_agent"] == "01" and e["to_agent"] == "18"]
+    assert any(e["payload"].get("waiting_on") == "crm_dedupe_response"
+               and not e["payload"].get("resolved") for e in waits), \
+        "01 must open the ratified dedupe-pending wait toward 18"
+    # 14 answers synchronously in this build - the wait must also be cleared
+    assert any(e["payload"].get("waiting_on") == "crm_dedupe_response"
+               and e["payload"].get("resolved") is True for e in waits), \
+        "01 must resolve the wait once record.response arrives"
+
+
+def test_agent01_resolves_wait_on_handoff_failed(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke01 = Spoke01LeadCapture(hub)  # no 14 registered: response never comes
+    hub.on_turn_start()
+    hub.send(signal("lead-w2", {
+        "channel": "call", "name": "John Roe", "phone": "555-0102",
+        "property_interest": {"listing_id": "L101"},
+        "timeline": "30 days", "budget": 300000,
+        "preapproval_status": "no", "today": "2026-07-01",
+        "consent": {"call": "yes", "text": "no", "email": "yes"},
+    }))
+    # past timeout twice: first sweep retries, second declares handoff.failed
+    assert spoke01.check_record_response_timeout("lead-w2", "2026-07-10") == "retried"
+    result = spoke01.check_record_response_timeout("lead-w2", "2026-07-20")
+    assert result not in ("within_timeout", "no_pending_or_no_timestamp")
+    waits = [e for e in persisted(hub, "agent.status")
+             if e["from_agent"] == "01" and e["to_agent"] == "18"]
+    assert any(e["payload"].get("resolved") is True for e in waits), \
+        "escalated handoff must clear the wait in 18 - no double reporting"

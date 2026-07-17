@@ -3,7 +3,6 @@ import sys
 import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, "/home/claude/pillars_pth")
 
 from dispatcher.core import Envelope, Routes, AuditLog
 from dispatcher.hub import Hub

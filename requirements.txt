@@ -1,0 +1,18 @@
+# Six-pillar detection tier - imported from their own packages, never
+# vendored (repackaging drift is defect class P4). Without these installed,
+# the swarm still routes: every absent pillar declares itself UNARMED on the
+# audit log (see dispatcher/hub.py, dispatcher/pillars.py) instead of
+# crashing - but a production deployment should run fully armed.
+#
+# Verified 2026-07-17: a bare clone without these packages previously
+# dead-lettered 100% of swarm traffic (98 test failures) via a hard import
+# in hub.ingest_spoke_trace. That import is now fail-declared, and this file
+# exists so nobody deploys unarmed by accident.
+pytest>=8.0
+
+open-mind @ git+https://github.com/QuietFireAI/open-mind.git
+agent-open-mind @ git+https://github.com/QuietFireAI/agent-open-mind.git
+before-turn @ git+https://github.com/QuietFireAI/before-turn.git
+pre-response-selfcheck @ git+https://github.com/QuietFireAI/pre-response-selfcheck.git
+sleep-marks @ git+https://github.com/QuietFireAI/sleep-marks.git
+splitvantage @ git+https://github.com/QuietFireAI/splitvantage.git

@@ -1,557 +1,556 @@
 {
- "version": "0.19",
- "vertical": "real-estate-listing-agent",
- "routes": [
-  {
-   "intent": "lead.captured",
-   "senders": [
-    "01",
-    "16"
-   ],
-   "receivers": [
-    "02"
-   ]
-  },
-  {
-   "intent": "lead.nurture",
-   "senders": [
-    "02"
-   ],
-   "receivers": [
-    "03"
-   ]
-  },
-  {
-   "intent": "lead.rescored",
-   "senders": [
-    "03"
-   ],
-   "receivers": [
-    "02"
-   ]
-  },
-  {
-   "intent": "content.review",
-   "senders": [
-    "03",
-    "04",
-    "12",
-    "13",
-    "20",
-    "16"
-   ],
-   "receivers": [
-    "17"
-   ]
-  },
-  {
-   "intent": "content.verdict",
-   "senders": [
-    "17"
-   ],
-   "receivers": [
-    "03",
-    "04",
-    "12",
-    "13",
-    "20",
-    "16"
-   ]
-  },
-  {
-   "intent": "asset.release",
-   "senders": [
-    "04"
-   ],
-   "receivers": [
-    "12",
-    "05"
-   ]
-  },
-  {
-   "intent": "listing.data",
-   "senders": [
-    "05"
-   ],
-   "receivers": [
-    "04",
-    "10",
-    "13"
-   ]
-  },
-  {
-   "intent": "listing.change.authorized",
-   "senders": [
-    "human"
-   ],
-   "receivers": [
-    "05"
-   ]
-  },
-  {
-   "intent": "showing.request",
-   "senders": [
-    "13",
-    "11"
-   ],
-   "receivers": [
-    "06"
-   ]
-  },
-  {
-   "intent": "doc.request",
-   "senders": [
-    "07"
-   ],
-   "receivers": [
-    "08"
-   ]
-  },
-  {
-   "intent": "doc.status",
-   "senders": [
-    "08"
-   ],
-   "receivers": [
-    "07"
-   ]
-  },
-  {
-   "intent": "vendor.request",
-   "senders": [
-    "05",
-    "06",
-    "07"
-   ],
-   "receivers": [
-    "09"
-   ]
-  },
-  {
-   "intent": "deliverable.release",
-   "senders": [
-    "09"
-   ],
-   "receivers": [
-    "05",
-    "08",
-    "07"
-   ]
-  },
-  {
-   "intent": "data.request",
-   "senders": [
-    "human",
-    "03",
-    "11",
-    "13",
-    "19"
-   ],
-   "receivers": [
-    "10"
-   ]
-  },
-  {
-   "intent": "data.package",
-   "senders": [
-    "10"
-   ],
-   "receivers": [
-    "human",
-    "03",
-    "11",
-    "13",
-    "19"
-   ]
-  },
-  {
-   "intent": "client.message.request",
-   "senders": [
-    "01",
-    "06",
-    "08",
-    "13",
-    "16",
-    "20",
-    "03"
-   ],
-   "receivers": [
-    "11"
-   ]
-  },
-  {
-   "intent": "client.message.send",
-   "senders": [
-    "11"
-   ],
-   "receivers": [
-    "external"
-   ]
-  },
-  {
-   "intent": "deadline.alert",
-   "senders": [
-    "07"
-   ],
-   "receivers": [
-    "11",
-    "18"
-   ]
-  },
-  {
-   "intent": "calendar.event",
-   "senders": [
-    "06",
-    "09"
-   ],
-   "receivers": [
-    "18"
-   ]
-  },
-  {
-   "intent": "date.trigger",
-   "senders": [
-    "14"
-   ],
-   "receivers": [
-    "16"
-   ]
-  },
-  {
-   "intent": "prospect.opportunity",
-   "senders": [
-    "19"
-   ],
-   "receivers": [
-    "human",
-    "13"
-   ]
-  },
-  {
-   "intent": "lead.signal",
-   "senders": [
-    "20"
-   ],
-   "receivers": [
-    "01"
-   ]
-  },
-  {
-   "intent": "lead.inbound",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "01"
-   ]
-  },
-  {
-   "intent": "report.package",
-   "senders": [
-    "14"
-   ],
-   "receivers": [
-    "human",
-    "15"
-   ]
-  },
-  {
-   "intent": "report.package",
-   "senders": [
-    "15",
-    "18",
-    "17"
-   ],
-   "receivers": [
-    "human"
-   ]
-  },
-  {
-   "intent": "interaction.log",
-   "senders": [
-    "01",
-    "02",
-    "03",
-    "04",
-    "05",
-    "06",
-    "07",
-    "08",
-    "09",
-    "10",
-    "11",
-    "12",
-    "13",
-    "15",
-    "16",
-    "17",
-    "18",
-    "19",
-    "20"
-   ],
-   "receivers": [
-    "14"
-   ]
-  },
-  {
-   "intent": "record.request",
-   "senders": [
-    "01",
-    "13",
-    "15",
-    "11"
-   ],
-   "receivers": [
-    "14"
-   ]
-  },
-  {
-   "intent": "record.response",
-   "senders": [
-    "14"
-   ],
-   "receivers": [
-    "01",
-    "13",
-    "11",
-    "15"
-   ]
-  },
-  {
-   "intent": "status.update",
-   "senders": [
-    "05"
-   ],
-   "receivers": [
-    "11",
-    "12",
-    "14"
-   ]
-  },
-  {
-   "intent": "transaction.closed",
-   "senders": [
-    "07"
-   ],
-   "receivers": [
-    "16",
-    "14",
-    "15"
-   ]
-  },
-  {
-   "intent": "vendor.schedule",
-   "senders": [
-    "09"
-   ],
-   "receivers": [
-    "external"
-   ]
-  },
-  {
-   "intent": "campaign.publish",
-   "senders": [
-    "12"
-   ],
-   "receivers": [
-    "external"
-   ]
-  },
-  {
-   "intent": "escalation.*",
-   "senders": [
-    "any"
-   ],
-   "receivers": [
-    "queue"
-   ]
-  },
-  {
-   "intent": "clarification.request",
-   "senders": [
-    "any"
-   ],
-   "receivers": [
-    "queue"
-   ]
-  },
-  {
-   "intent": "integrity.violation",
-   "senders": [
-    "any"
-   ],
-   "receivers": [
-    "queue"
-   ]
-  },
-  {
-   "intent": "config.update",
-   "senders": [
-    "human"
-   ],
-   "receivers": [
-    "any"
-   ]
-  },
-  {
-   "intent": "lead.reply",
-   "senders": [
-    "11"
-   ],
-   "receivers": [
-    "03",
-    "04",
-    "12",
-    "13",
-    "20",
-    "16"
-   ]
-  },
-  {
-   "intent": "behavioral.signal",
-   "senders": [
-    "12",
-    "20"
-   ],
-   "receivers": [
-    "03"
-   ]
-  },
-  {
-   "intent": "status.request",
-   "senders": [
-    "06"
-   ],
-   "receivers": [
-    "05"
-   ]
-  },
-  {
-   "intent": "status.response",
-   "senders": [
-    "05"
-   ],
-   "receivers": [
-    "06"
-   ]
-  },
-  {
-   "intent": "showing.no_show",
-   "senders": [
-    "11",
-    "18"
-   ],
-   "receivers": [
-    "06"
-   ]
-  },
-  {
-   "intent": "showing.feedback_response",
-   "senders": [
-    "11"
-   ],
-   "receivers": [
-    "06"
-   ]
-  },
-  {
-   "intent": "document.submission",
-   "senders": [
-    "11"
-   ],
-   "receivers": [
-    "08"
-   ]
-  },
-  {
-   "intent": "vendor.event",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "09"
-   ]
-  },
-  {
-   "intent": "vendor.cancellation_notice",
-   "senders": [
-    "09"
-   ],
-   "receivers": [
-    "07",
-    "06"
-   ]
-  },
-  {
-   "intent": "compliance.notice",
-   "senders": [
-    "10",
-    "05"
-   ],
-   "receivers": [
-    "17"
-   ]
-  },
-  {
-   "intent": "client.reply",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "11"
-   ]
-  },
-  {
-   "intent": "agent.status",
-   "senders": [
-    "01",
-    "02",
-    "03",
-    "05",
-    "06",
-    "07",
-    "08",
-    "09",
-    "11",
-    "04",
-    "12",
-    "13",
-    "15",
-    "16",
-    "17",
-    "19",
-    "20"
-   ],
-   "receivers": [
-    "18"
-   ]
-  },
-  {
-   "intent": "platform.metrics",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "12"
-   ]
-  },
-  {
-   "intent": "discovery.feed",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "19"
-   ]
-  },
-  {
-   "intent": "social.mention",
-   "senders": [
-    "external"
-   ],
-   "receivers": [
-    "20"
-   ]
-  }
- ]
+  "version": "0.19",
+  "vertical": "real-estate-listing-agent",
+  "routes": [
+    {
+      "intent": "lead.captured",
+      "senders": [
+        "01",
+        "16"
+      ],
+      "receivers": [
+        "02"
+      ]
+    },
+    {
+      "intent": "lead.nurture",
+      "senders": [
+        "02"
+      ],
+      "receivers": [
+        "03"
+      ]
+    },
+    {
+      "intent": "lead.rescored",
+      "senders": [
+        "03"
+      ],
+      "receivers": [
+        "02"
+      ]
+    },
+    {
+      "intent": "content.review",
+      "senders": [
+        "03",
+        "04",
+        "12",
+        "13",
+        "20",
+        "16"
+      ],
+      "receivers": [
+        "17"
+      ]
+    },
+    {
+      "intent": "content.verdict",
+      "senders": [
+        "17"
+      ],
+      "receivers": [
+        "03",
+        "04",
+        "12",
+        "13",
+        "20",
+        "16"
+      ]
+    },
+    {
+      "intent": "asset.release",
+      "senders": [
+        "04"
+      ],
+      "receivers": [
+        "12",
+        "05"
+      ]
+    },
+    {
+      "intent": "listing.data",
+      "senders": [
+        "05"
+      ],
+      "receivers": [
+        "04",
+        "10",
+        "13"
+      ]
+    },
+    {
+      "intent": "listing.change.authorized",
+      "senders": [
+        "human"
+      ],
+      "receivers": [
+        "05"
+      ]
+    },
+    {
+      "intent": "showing.request",
+      "senders": [
+        "13",
+        "11"
+      ],
+      "receivers": [
+        "06"
+      ]
+    },
+    {
+      "intent": "doc.request",
+      "senders": [
+        "07"
+      ],
+      "receivers": [
+        "08"
+      ]
+    },
+    {
+      "intent": "doc.status",
+      "senders": [
+        "08"
+      ],
+      "receivers": [
+        "07"
+      ]
+    },
+    {
+      "intent": "vendor.request",
+      "senders": [
+        "05",
+        "06",
+        "07"
+      ],
+      "receivers": [
+        "09"
+      ]
+    },
+    {
+      "intent": "deliverable.release",
+      "senders": [
+        "09"
+      ],
+      "receivers": [
+        "05",
+        "08",
+        "07"
+      ]
+    },
+    {
+      "intent": "data.request",
+      "senders": [
+        "human",
+        "03",
+        "11",
+        "13",
+        "19"
+      ],
+      "receivers": [
+        "10"
+      ]
+    },
+    {
+      "intent": "data.package",
+      "senders": [
+        "10"
+      ],
+      "receivers": [
+        "human",
+        "03",
+        "11",
+        "13",
+        "19"
+      ]
+    },
+    {
+      "intent": "client.message.request",
+      "senders": [
+        "01",
+        "06",
+        "08",
+        "13",
+        "16",
+        "20",
+        "03"
+      ],
+      "receivers": [
+        "11"
+      ]
+    },
+    {
+      "intent": "client.message.send",
+      "senders": [
+        "11"
+      ],
+      "receivers": [
+        "external"
+      ]
+    },
+    {
+      "intent": "deadline.alert",
+      "senders": [
+        "07"
+      ],
+      "receivers": [
+        "11",
+        "18"
+      ]
+    },
+    {
+      "intent": "calendar.event",
+      "senders": [
+        "06",
+        "09"
+      ],
+      "receivers": [
+        "18"
+      ]
+    },
+    {
+      "intent": "date.trigger",
+      "senders": [
+        "14"
+      ],
+      "receivers": [
+        "16"
+      ]
+    },
+    {
+      "intent": "prospect.opportunity",
+      "senders": [
+        "19"
+      ],
+      "receivers": [
+        "human",
+        "13"
+      ]
+    },
+    {
+      "intent": "lead.signal",
+      "senders": [
+        "20"
+      ],
+      "receivers": [
+        "01"
+      ]
+    },
+    {
+      "intent": "lead.inbound",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "01"
+      ]
+    },
+    {
+      "intent": "report.package",
+      "senders": [
+        "14"
+      ],
+      "receivers": [
+        "human",
+        "15"
+      ]
+    },
+    {
+      "intent": "report.package",
+      "senders": [
+        "15",
+        "18",
+        "17"
+      ],
+      "receivers": [
+        "human"
+      ]
+    },
+    {
+      "intent": "interaction.log",
+      "senders": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+        "13",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20"
+      ],
+      "receivers": [
+        "14"
+      ]
+    },
+    {
+      "intent": "record.request",
+      "senders": [
+        "01",
+        "13",
+        "15",
+        "11"
+      ],
+      "receivers": [
+        "14"
+      ]
+    },
+    {
+      "intent": "record.response",
+      "senders": [
+        "14"
+      ],
+      "receivers": [
+        "01",
+        "13",
+        "11",
+        "15"
+      ]
+    },
+    {
+      "intent": "status.update",
+      "senders": [
+        "05"
+      ],
+      "receivers": [
+        "11",
+        "12",
+        "14"
+      ]
+    },
+    {
+      "intent": "transaction.closed",
+      "senders": [
+        "07"
+      ],
+      "receivers": [
+        "16",
+        "14",
+        "15"
+      ]
+    },
+    {
+      "intent": "vendor.schedule",
+      "senders": [
+        "09"
+      ],
+      "receivers": [
+        "external"
+      ]
+    },
+    {
+      "intent": "campaign.publish",
+      "senders": [
+        "12"
+      ],
+      "receivers": [
+        "external"
+      ]
+    },
+    {
+      "intent": "escalation.*",
+      "senders": [
+        "any"
+      ],
+      "receivers": [
+        "queue"
+      ]
+    },
+    {
+      "intent": "clarification.request",
+      "senders": [
+        "any"
+      ],
+      "receivers": [
+        "queue"
+      ]
+    },
+    {
+      "intent": "integrity.violation",
+      "senders": [
+        "any"
+      ],
+      "receivers": [
+        "queue"
+      ]
+    },
+    {
+      "intent": "config.update",
+      "senders": [
+        "human"
+      ],
+      "receivers": [
+        "any"
+      ]
+    },
+    {
+      "intent": "lead.reply",
+      "senders": [
+        "11"
+      ],
+      "receivers": [
+        "03",
+        "04",
+        "12",
+        "13",
+        "20",
+        "16"
+      ]
+    },
+    {
+      "intent": "behavioral.signal",
+      "senders": [
+        "12",
+        "20"
+      ],
+      "receivers": [
+        "03"
+      ]
+    },
+    {
+      "intent": "status.request",
+      "senders": [
+        "06"
+      ],
+      "receivers": [
+        "05"
+      ]
+    },
+    {
+      "intent": "status.response",
+      "senders": [
+        "05"
+      ],
+      "receivers": [
+        "06"
+      ]
+    },
+    {
+      "intent": "showing.no_show",
+      "senders": [
+        "11",
+        "18"
+      ],
+      "receivers": [
+        "06"
+      ]
+    },
+    {
+      "intent": "showing.feedback_response",
+      "senders": [
+        "11"
+      ],
+      "receivers": [
+        "06"
+      ]
+    },
+    {
+      "intent": "document.submission",
+      "senders": [
+        "11"
+      ],
+      "receivers": [
+        "08"
+      ]
+    },
+    {
+      "intent": "vendor.event",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "09"
+      ]
+    },
+    {
+      "intent": "vendor.cancellation_notice",
+      "senders": [
+        "09"
+      ],
+      "receivers": [
+        "07",
+        "06"
+      ]
+    },
+    {
+      "intent": "compliance.notice",
+      "senders": [
+        "10",
+        "05"
+      ],
+      "receivers": [
+        "17"
+      ]
+    },
+    {
+      "intent": "client.reply",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "11"
+      ]
+    },
+    {
+      "intent": "agent.status",
+      "senders": [
+        "01",
+        "02",
+        "03",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "11",
+        "04",
+        "12",
+        "13",
+        "15",
+        "16",
+        "17",
+        "19",
+        "20"
+      ],
+      "receivers": [
+        "18"
+      ]
+    },
+    {
+      "intent": "platform.metrics",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "12"
+      ]
+    },
+    {
+      "intent": "discovery.feed",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "19"
+      ]
+    },
+    {
+      "intent": "social.mention",
+      "senders": [
+        "external"
+      ],
+      "receivers": [
+        "20"
+      ]
+    }
+  ]
 }
