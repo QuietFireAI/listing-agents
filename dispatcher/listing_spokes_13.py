@@ -41,7 +41,18 @@ class Spoke13BuyerSearchMatch:
          flagged delivery requires standing preference
       4. 'is this a good price?' -> Legal Line
       5. match volume overload -> rank strictly by stated-criteria fit,
-         no inferred preferences
+         no inferred preferences. NOT implemented - zero code, zero test
+         coverage, confirmed by grep. Every match is delivered
+         individually and immediately as its triggering envelope
+         (listing.data / prospect.opportunity) arrives; there is no
+         batching, no volume threshold, no ranking mechanism anywhere in
+         this class. Unlike the structural gaps in Agents 05/10/12
+         (blocked on missing external config), this one is blocked on a
+         genuine design decision this review shouldn't guess at: what
+         counts as "overload" (a count? a time window?), and whether
+         introducing batching/delay where the current architecture is
+         fully synchronous-per-envelope is the right shape at all.
+         Flagged honestly rather than invented.
       6. criteria conflict internally (budget vs area) -> present the
          conflict with data, never silently relax
       7. match on a colleague's listing -> disclosure rules to human
