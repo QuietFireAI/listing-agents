@@ -308,3 +308,31 @@ def test_partial_deliverable_does_not_resolve_the_wait(tmp_path):
     statuses = persisted(hub, "agent.status")
     assert not any(s["payload"].get("resolved") for s in statuses), \
         "partial deliverable must not resolve the wait - still waiting on the rest"
+
+
+# --------- no-vendor_id fail-open closed (2026-07-17): roster is the authority
+def test_vendor_request_without_id_and_empty_roster_fails_closed(tmp_path):
+    """A vendor.request naming only a kind used to bypass the roster AND
+    credential gates and confirm a booking with vendor_id=None - exactly
+    what P01 Phase 1b sends. Empty roster = nothing approved = nothing
+    scheduled."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke09VendorCoordination(hub)  # empty roster
+    hub.on_turn_start()
+    hub.send(vendor_req("p1", {"kind": "photography"}))
+    assert "photography" not in spoke.scheduled.get("p1", {})
+    reasons = [r.get("payload", {}).get("reason", r.get("reason", ""))
+               for r in hub.queues["clarification.request"]]
+    assert any("no approved roster vendor" in r for r in reasons)
+
+
+def test_vendor_request_without_id_selects_from_approved_roster(tmp_path):
+    hub = make_hub(str(tmp_path))
+    roster = {"v-photo-1": {"kind": "photography",
+                            "license_expiry": "2027-01-01",
+                            "insurance_expiry": "2027-01-01",
+                            "regulated": False}}
+    spoke = Spoke09VendorCoordination(hub, roster=roster)
+    hub.on_turn_start()
+    hub.send(vendor_req("p2", {"kind": "photography", "today": "2026-07-17"}))
+    assert spoke.scheduled["p2"]["photography"]["vendor_id"] == "v-photo-1"

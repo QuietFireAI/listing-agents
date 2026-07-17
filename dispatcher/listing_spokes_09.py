@@ -86,6 +86,31 @@ class Spoke09VendorCoordination:
             kind = payload.get("kind")
             today = payload.get("today")
 
+            # Real fail-open, found 2026-07-17 by reading (invisible to the
+            # .get-default sweeps): a vendor.request with NO vendor_id
+            # skipped the roster gate AND the credential gate below (both
+            # guarded by `if vendor_id ...`) and confirmed scheduling with
+            # vendor_id=None - and that is exactly what P01 Phase 1b sends
+            # ({"kind": "photography"}). Tuple 6's own doctrine: empty/
+            # unset roster means nothing is approved yet, fail closed.
+            # Now: no vendor named -> select from the approved roster by
+            # kind (credentials current where checkable); no approved
+            # vendor of that kind -> clarification, never a None booking.
+            if not vendor_id:
+                candidates = [vid for vid, v in self.roster.items()
+                              if v.get("kind") == kind
+                              and (not today or self._credentials_current(vid, today))]
+                if not candidates:
+                    self.hub.send(_env("09", "queue", "clarification.request",
+                                       ctx, {"reason": f"no approved roster "
+                                                       f"vendor for kind "
+                                                       f"{kind!r} - nothing "
+                                                       f"scheduled, urgency "
+                                                       f"does not create "
+                                                       f"approval"}))
+                    return
+                vendor_id = sorted(candidates)[0]  # deterministic pick
+
             # tuple 6: not on approved list -> refuse, propose addition to
             # human; urgency creates no approval
             if vendor_id and vendor_id not in self.roster:
