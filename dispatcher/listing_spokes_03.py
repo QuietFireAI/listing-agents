@@ -34,9 +34,18 @@ class Spoke03LeadNurture:
     DECISIONS.md tuples implemented directly:
       1. lead replies mid-sequence -> pause, route the reply, never auto-continue
       2. ambiguous opt-out ('stop sending so many') -> frequency complaint:
-         reduce + confirm; explicit 'stop' is a full opt-out (different tuple)
+         reduce + confirm; explicit 'stop' is a full opt-out (different
+         tuple). Fixed 2026-07-16: tuple 1's blanket pause used to be set
+         unconditionally before this branch ran, and nothing here ever
+         undid it - a frequency complaint silently killed the sequence
+         forever, identical in effect to the opt-out this tuple explicitly
+         says it isn't. This branch now explicitly resumes the sequence.
       3. sequence content has expired market data -> regenerate or skip the touch
-      4. two sequences eligible -> run neither until human picks, never stack
+      4. two sequences eligible -> run neither until human picks, never
+         stack. NOTE: this and tuple 10 below may describe the same
+         scenario with two different resolutions (run neither vs newest
+         wins) - flagged as a genuine open question, not resolved here;
+         the code currently applies tuple 4's behavior in every case.
       5. engagement spike -> rescore via 02, never convert signal into
          direct outreach itself
       6. contact replies STOP/equivalent -> suppress across ALL channels
@@ -48,7 +57,9 @@ class Spoke03LeadNurture:
       9. content references a listing that changed status -> pull the step,
          stale claims are fabrications
       10. two sequences target one context -> one per context, newest
-          signed instruction wins, overlap logged
+          signed instruction wins, overlap logged. See tuple 4's note -
+          the code does not currently implement a distinct "newest wins"
+          path; every overlap holds for a human instead.
       11. substantive question from inside a drip -> route to 11 for a
           gated human-reviewed reply, out of sequence
     """
@@ -208,14 +219,23 @@ class Spoke03LeadNurture:
 
             if "stop sending so many" in low or "too many" in low:
                 # tuple 2: ambiguous frequency complaint -> reduce + confirm,
-                # NOT a full opt-out
+                # NOT a full opt-out. Was: the blanket "any reply pauses"
+                # logic above (tuple 1) set paused=True unconditionally,
+                # and nothing here ever undid it - a lead saying "you're
+                # emailing me too much" silently killed their entire
+                # sequence forever, instead of continuing at a lower
+                # cadence as this tuple actually requires. Fixed: this
+                # reply type explicitly resumes the sequence.
                 self.frequency_cap_per_week = max(1, self.frequency_cap_per_week - 1)
+                if seq:
+                    seq["paused"] = False
                 self.hub.ingest_spoke_trace(
                     "03", env.envelope_id,
                     thought="frequency complaint, not an explicit opt-out - "
                             "reducing cadence and confirming, sequence "
-                            "continues at lower frequency",
-                    result=f"frequency reduced to {self.frequency_cap_per_week}/wk")
+                            "resumes (not left paused) at lower frequency",
+                    result=f"frequency reduced to {self.frequency_cap_per_week}/wk, "
+                          f"resumed")
                 return
 
             # substantive question mid-drip -> route to 11, gated human review

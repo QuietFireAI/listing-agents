@@ -1,15 +1,13 @@
 """Pressure test for listing Agent 03 (Lead Nurture).
 
-Two classes of test here, deliberately distinguished:
-  - FULL HUB tests: lead.nurture, content.verdict, data.package - these have
-    real routes in identity/routes.json and go through hub.send() end to end.
-  - LOGIC-ONLY tests: lead.reply, behavioral.signal - NO ROUTE EXISTS for
-    these anywhere in the ratified identity (verified directly - checked
-    every agent's SKILL.md and routes.json). Sending them via hub.send()
-    would just get held in clarification.request, never reaching this
-    spoke's handler. These tests call spoke.handle() directly to prove the
-    business logic is correct, clearly marked as pending a real routing
-    decision - not claiming these are wired end to end, because they are not.
+All tests go through the real hub (hub.send()), against real routes in
+identity/routes.json. Note for future readers: this file used to split
+tests into a "full hub" class and a "logic-only, spoke.handle() direct"
+class, because lead.reply and behavioral.signal had no ratified route
+into this agent yet. Both routes were added since (11->03/04/12/13/20
+for lead.reply; 12,20->03 for behavioral.signal) - confirmed 2026-07-16,
+zero remaining spoke.handle() calls in this file. Every test here is a
+genuine end-to-end route test, not a logic-only stand-in.
 """
 import os
 import sys
@@ -302,3 +300,38 @@ def test_REGRESSION_touch_never_sent_for_uncleared_sequence(tmp_path):
     result = spoke.send_scheduled_touch(ctx, {"body": "x"}, "2026-W32")
     assert result == "not_eligible"
     assert not persisted(hub, "client.message.request")
+
+
+# ------------------------------------------- THE FIX: frequency complaint
+def test_frequency_complaint_reduces_cadence_but_does_not_kill_sequence(tmp_path):
+    """Tuple 2: 'stop sending so many' -> reduce + confirm, NOT a full
+    opt-out - the sequence continues, just slower. Was: the generic
+    tuple-1 'any reply pauses' logic set paused=True unconditionally
+    before this branch even ran, and nothing here ever undid it - a
+    frequency complaint silently killed the entire sequence forever,
+    identical in effect to an explicit opt-out it explicitly isn't."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub, frequency_cap_per_week=3)
+    hub.on_turn_start()
+    ctx = "freq-001"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+
+    complaint = Envelope(from_agent="11", to_agent="03", intent="lead.reply",
+                        client_context_id=ctx,
+                        payload={"message": "you're sending too many emails"},
+                        provenance={"source": "spoke-11", "captured_at": "runtime",
+                                    "verbatim_available": True})
+    hub.send(complaint)
+
+    assert spoke.frequency_cap_per_week == 2, "cadence must actually reduce"
+    assert spoke.active_sequences[ctx]["paused"] is False, \
+        "sequence must resume after a frequency complaint, not stay paused forever"
+
+    result = spoke.send_scheduled_touch(ctx, {"body": "next touch"}, "2026-W32")
+    assert result == "sent", \
+        "a touch must actually be sendable after the complaint is handled"
