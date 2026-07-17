@@ -48,6 +48,7 @@ doesn't specify one.
 
 | Agent | Field | Default | Where it's set | Controls |
 |---|---|---|---|---|
+| 06 (Showing Scheduler) | `buffer_minutes` (in `showing.request` payload) | `30` | `listing_spokes_06.py` `_schedule()` | Minimum spacing enforced between two showings on the same context before they're treated as conflicting. Missed in the original sweep - became load-bearing only once the buffer-enforcement fix landed (2026-07-16); before that it was captured but never compared against anything, so its default value had no functional effect. |
 | 12 (Marketing Campaign) | `spike_threshold` (in `platform.metrics` payload) | `50` | `listing_spokes_12.py:280` | Engagement value above which a spike feeds back into nurture (Agent 03) |
 | 19 (Prospecting) | `rank_threshold` (in `discovery.feed` payload) | `0.5` | `listing_spokes_19.py:186` | Minimum rank-basis-strength before a rank is included rather than presented unranked |
 
