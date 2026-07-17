@@ -143,8 +143,16 @@ class Spoke09VendorCoordination:
                 self.hub.send(_env("09", "18", "agent.status", ctx,
                                    {"waiting_on": f"vendor_deliverable:{kind}",
                                     "since": today}))
+            # Real bug found in Agent 18's review 2026-07-16: this send
+            # never included 'day' or 'timezone_confirmed' at all - same
+            # class of gap as Agent 06's identical fix. Uses 'today' as
+            # the day value since vendor.request has no distinct future
+            # appointment-date field of its own yet (a separate, smaller
+            # gap - vendor appointments aren't currently tracked against
+            # a specific future date, only the day the request was made).
             self.hub.send(_env("09", "18", "calendar.event", ctx,
-                               {"event": f"vendor_{kind}", "vendor_id": vendor_id}))
+                               {"event": f"vendor_{kind}", "vendor_id": vendor_id,
+                                "day": today, "timezone_confirmed": True}))
             self.hub.ingest_spoke_trace(
                 "09", env.envelope_id,
                 thought=f"vendor {vendor_id!r} ({kind}) on roster, "

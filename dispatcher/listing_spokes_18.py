@@ -25,20 +25,55 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
 class Spoke18CalendarTask:
     """DECISIONS.md tuples implemented directly:
       1. event conflict priority rules can't resolve -> human, never
-         silently move either
-      2. briefing item's source envelope missing -> state the gap
+         silently move either. Fixed 2026-07-16: only tuple 5's day-
+         capacity check existed - two events at the exact same time on
+         the same day would both silently get added with zero conflict
+         signal. Now a real time-based conflict check, distinct from
+         capacity.
+      2. briefing item's source envelope missing -> state the gap. NOT
+         implemented - generate_briefing() only aggregates what it has;
+         there's no mechanism to know something is missing unless a
+         separate system tells it to expect that item. Genuinely
+         difficult without an "expected items" tracking layer this
+         review won't invent.
       3. human instruction conflicts with contractual deadline -> surface
-         both, act on neither until directed
+         both, act on neither until directed. NOT implemented - zero
+         code, confirmed by grep. No payload key or handler exists for a
+         distinct "human instruction" input at all.
       4. agent asks to move a protected deadline block -> refuse, human
          confirmation only
-      5. overloaded day -> propose priority order, human confirms
+      5. overloaded day -> propose priority order, human confirms. Soft
+         finding, not fixed: the message claims "proposing priority
+         order" but no actual order is computed or attached - same
+         decorative-claim pattern as Agents 04/06/09.
       6. two deadline sources disagree -> track both, alert the conflict,
          never pick the friendlier date
       7. owner calendar conflicts with contractual deadline -> deadline
          outranks, propose the move on the soft item
       8. recurring task silently failing (no completion events) -> surface
-         the pattern, a quiet calendar is a suspect calendar
+         the pattern, a quiet calendar is a suspect calendar. SERIOUS GAP
+         found 2026-07-16: self.recurring_task_last_seen is never written
+         by any real code path anywhere in this class - the existing test
+         populated it by directly poking the internal dict
+         (spoke.recurring_task_last_seen[...] = ...), not through any
+         real message. In actual operation this dict is always empty, so
+         check_recurring_task() can never fire - there is no mechanism
+         anywhere in the swarm that signals "a recurring task completed."
+         Needs a real design decision (what signal, from whom) this
+         review won't invent.
       9. timezone ambiguity -> confirm before scheduling
+
+    CRITICAL cross-agent bug found and fixed 2026-07-16, not a tuple:
+    Agent 06's and Agent 09's calendar.event sends never included 'day'
+    or 'timezone_confirmed' at all. This agent gates on tz_confirmed
+    FIRST and keys its entire calendar on 'day' - meaning every single
+    real showing confirmation (06) and vendor appointment (09) was
+    getting caught at the timezone-ambiguity gate and NEVER reaching the
+    calendar, ever. Verified directly: a real showing confirmation
+    produced a clarification.request and left self.calendar completely
+    empty. In production this agent's calendar, capacity checks, and
+    protected-block tracking were all silently non-functional. Fixed in
+    both senders.
 
     Plus: agent.status tracking - the actual fix for real-time HITL
     visibility into what's waiting on what, discussed and decided as a
@@ -110,10 +145,24 @@ class Spoke18CalendarTask:
 
             day_events = self.calendar.setdefault(day, [])
 
-            # tuple 1: conflict priority rules can't resolve -> human,
-            # never silently move either
+            # tuple 1: event conflict the priority rules cannot resolve ->
+            # human, never silently move either. Fixed 2026-07-16: only
+            # tuple 5's day-capacity check existed - two events at the
+            # exact same time on the same day would both silently get
+            # added with zero conflict signal, since only the aggregate
+            # day count was ever checked. Distinct from capacity: this is
+            # about two specific events actually colliding.
+            time = payload.get("time")
+            if time and any(e.get("time") == time for e in day_events):
+                self.hub.send(_env("18", "queue", "clarification.request", ctx,
+                                   {"reason": f"event conflict at {time!r} on "
+                                             f"{day!r} - priority rules don't "
+                                             f"resolve this, human decides, "
+                                             f"never silently moving either"}))
+                return
+
+            # tuple 5: overloaded day -> propose priority order, human confirms
             if len(day_events) >= self.max_events_per_day:
-                # tuple 5: overloaded day -> propose priority order, human confirms
                 self.hub.send(_env("18", "queue", "clarification.request", ctx,
                                    {"reason": "day is at capacity - "
                                              "proposing priority order for "
@@ -123,7 +172,7 @@ class Spoke18CalendarTask:
 
             event_id = payload.get("event_id", f"{day}-{len(day_events)}")
             day_events.append({"event_id": event_id, "source": env.from_agent,
-                              "protected": protected})
+                              "protected": protected, "time": time})
             if protected:
                 self.protected_blocks[event_id] = {"day": day, "source": env.from_agent}
             self.hub.send(_env("18", "14", "interaction.log", ctx,

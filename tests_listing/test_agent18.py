@@ -128,6 +128,12 @@ def test_deadline_conflicts_with_soft_calendar_item_proposes_move(tmp_path):
 
 
 def test_recurring_task_silence_surfaced(tmp_path):
+    """NOTE: this seeds spoke.recurring_task_last_seen directly because
+    nothing in this class ever writes to it through a real message path -
+    there is no signal anywhere in the swarm for "a recurring task
+    completed." This test verifies check_recurring_task()'s own logic in
+    isolation, not that the mechanism works end-to-end in production -
+    it doesn't; see the class docstring's tuple 8 note."""
     hub = make_hub(str(tmp_path))
     spoke = Spoke18CalendarTask(hub)
     hub.on_turn_start()

@@ -339,8 +339,20 @@ class Spoke06ShowingScheduler:
                                    {"kind": "showing_bumped",
                                     "time": bumped["time"]}))
 
+        # Real bug found in Agent 18's review 2026-07-16: this send never
+        # included 'day' or 'timezone_confirmed' - Agent 18 keys its
+        # entire calendar on 'day' and gates on tz_confirmed FIRST, so
+        # every real showing confirmation was getting caught at the
+        # timezone-ambiguity gate and never reaching the calendar at all.
+        # timezone_confirmed=True is correct here: by this point
+        # requested_time is already a fully resolved ISO datetime (not an
+        # ambiguous conversational time like "let's say 10") - that
+        # ambiguity, if any, is resolved before a showing reaches
+        # confirmation, not after.
         self.hub.send(_env("06", "18", "calendar.event", ctx,
                            {"event": "showing", "time": requested_time,
+                            "day": requested_time.split("T")[0] if requested_time else None,
+                            "timezone_confirmed": True,
                             "buffer_minutes": buffer_minutes}))
 
         # job component: open house RSVP logistics - an open house (unlike
