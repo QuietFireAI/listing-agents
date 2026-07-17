@@ -294,3 +294,99 @@ def test_TUNABLE_agent17_near_miss_pattern_threshold_is_real(tmp_path):
     reports = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
               and e["intent"] == "report.package"]
     assert any(r["payload"].get("report_type") == "near_miss_pattern" for r in reports)
+
+
+# ---------------- 2026-07-17 sweep: dict/set-shaped parameters, missed
+# the first pass because the original grep only caught int/float defaults
+def test_TUNABLE_agent05_required_artifacts_is_real(tmp_path):
+    from dispatcher.listing_spokes_05 import Spoke05MLSListingManagement
+    hub, signer = make_signed_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub, required_artifacts={"sold": "custom_artifact"})
+    hub.on_turn_start()
+    env = Envelope(from_agent="human", to_agent="05", intent="listing.change.authorized",
+                  client_context_id="t-1",
+                  payload={"field": "status", "value": "sold"},
+                  provenance={"source": "human", "captured_at": "runtime",
+                              "verbatim_available": True})
+    signer.sign(env)
+    hub.send(env)
+    clar = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+           and e["intent"] == "clarification.request"]
+    assert any("custom_artifact" in c["payload"].get("reason", "") for c in clar), \
+        "the custom artifact name must actually govern the refusal, not the old hardcoded one"
+
+
+def test_TUNABLE_agent06_min_notice_hours_is_real(tmp_path):
+    from dispatcher.listing_spokes_06 import Spoke06ShowingScheduler
+    hub, signer = make_signed_hub(str(tmp_path))
+    Spoke06ShowingScheduler(hub, min_notice_hours={"default": 1})
+    hub.on_turn_start()
+    env = Envelope(from_agent="13", to_agent="06", intent="showing.request",
+                  client_context_id="t-1",
+                  payload={"requested_time": "2026-08-01T10:00",
+                          "buyer_agreement_on_file": True,
+                          "requester_identity_verified": True,
+                          "property_occupied": True, "hours_notice": 2},
+                  provenance={"source": "spoke-13", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    sends = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+            and e["intent"] == "client.message.request"]
+    assert not any(s["payload"].get("template") == "next_legal_slot_offer" for s in sends), \
+        "2 hours notice must clear a 1-hour minimum, not the old hardcoded 24"
+
+
+def test_TUNABLE_agent08_expected_senders_is_real(tmp_path):
+    from dispatcher.listing_spokes_08 import Spoke08DocumentCollection
+    hub, signer = make_signed_hub(str(tmp_path))
+    Spoke08DocumentCollection(hub, expected_senders={"t-1": {"preapproval_letter": "lender-x"}})
+    hub.on_turn_start()
+    env = Envelope(from_agent="11", to_agent="08", intent="document.submission",
+                  client_context_id="t-1",
+                  payload={"doc_type": "preapproval_letter",
+                          "submitting_party": "lender-x"},
+                  provenance={"source": "spoke-11", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    quarantine = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+                 and e["intent"] == "clarification.request"]
+    assert not any("quarantine" in q["payload"].get("reason", "").lower() for q in quarantine), \
+        "a party matching the configured allowlist must not be quarantined"
+
+
+def test_TUNABLE_agent09_roster_is_real(tmp_path):
+    from dispatcher.listing_spokes_09 import Spoke09VendorCoordination
+    hub, signer = make_signed_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster={"insp-custom": {
+        "kind": "inspector", "license_expiry": "2027-01-01",
+        "insurance_expiry": "2027-01-01", "regulated": True}})
+    hub.on_turn_start()
+    env = Envelope(from_agent="07", to_agent="09", intent="vendor.request",
+                  client_context_id="t-1",
+                  payload={"kind": "inspector", "vendor_id": "insp-custom",
+                          "milestone": "inspection"},
+                  provenance={"source": "spoke-07", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    refusals = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+               and e["intent"] == "clarification.request"]
+    assert not any("approved list" in r["payload"].get("reason", "") for r in refusals), \
+        "a vendor present in the configured roster must not be refused as unapproved"
+
+
+def test_TUNABLE_agent11_exempt_alert_classes_is_real(tmp_path):
+    from dispatcher.listing_spokes_11 import Spoke11ClientCommunication
+    hub, signer = make_signed_hub(str(tmp_path))
+    Spoke11ClientCommunication(hub, exempt_alert_classes={"wire_fraud_alert"})
+    hub.on_turn_start()
+    env = Envelope(from_agent="07", to_agent="11", intent="deadline.alert",
+                  client_context_id="t-1",
+                  payload={"template": "wire_fraud_alert",
+                          "alert_class": "wire_fraud_alert", "hour": 2},
+                  provenance={"source": "spoke-07", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    sends = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
+            and e["intent"] == "client.message.send"]
+    assert any(s["payload"].get("template") == "wire_fraud_alert" for s in sends), \
+        "an alert class configured as exempt must send during quiet hours, not queue"
