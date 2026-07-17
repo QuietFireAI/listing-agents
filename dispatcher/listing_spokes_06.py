@@ -26,7 +26,11 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
 class Spoke06ShowingScheduler:
     """DECISIONS.md tuples implemented directly:
       1. calendar double-booking -> protected deadline wins; otherwise
-         first-confirmed wins, alternatives offered
+         first-confirmed wins, alternatives offered. Fixed 2026-07-16:
+         "protected deadline wins" used to mean "ignore the conflict
+         check and schedule anyway" - both showings ended up marked
+         confirmed, and the bumped party got no notification at all. Now
+         the displaced showing is actually removed and its party notified.
       2. requester identity cannot be verified -> cancel the access-bearing
          appointment, no exceptions
       3. 'just let them in' -> refuse + escalation.legal_line, access is
@@ -40,10 +44,21 @@ class Spoke06ShowingScheduler:
          slot, never ask seller to waive notice unprompted
       8. agent no-shows twice -> flag pattern to human before third confirm
       9. overlapping showings -> sequence with buffer, never double-book
-         and hope
+         and hope. Fixed 2026-07-16: the conflict check was exact-time-
+         match only - buffer_minutes rode along in the calendar.event
+         payload as pure data, never compared against anything. Two
+         showings 15 minutes apart with buffer_minutes=30 produced zero
+         conflict detection. Now a real buffer-aware overlap check.
       10. feedback unanswered after two asks -> stop asking
       11. request for a property under contract -> confirm show-ability
           via 05 first, never assume active
+
+    Open question, not resolved here: tuple 1's "alternatives offered"
+    and tuples 5/7's "offer first legal slot" send a template name and a
+    supporting number (required_notice_hours) to 11, not a computed
+    alternative time - this may be intentional division of labor (11's
+    template layer computes the real slot) rather than a gap. Not
+    changed without confirming which it is.
     """
 
     # TUNABLE (owner-ratified 2026-07-16): feedback_ask_cap=2,
@@ -222,6 +237,26 @@ class Spoke06ShowingScheduler:
                                                        f"before third confirmation"}))
             return
 
+    def _time_conflict(self, existing_time_str, requested_time_str,
+                       buffer_minutes) -> bool:
+        """Was: exact-match only (s.get('time') == requested_time), so
+        buffer_minutes rode along in the calendar.event payload as pure
+        data - nothing ever compared it against anything. Two showings
+        15 minutes apart with buffer_minutes=30 produced zero conflict
+        detection. Fixed: real buffer-aware overlap check."""
+        import datetime
+        if not existing_time_str or not requested_time_str:
+            return False
+        try:
+            existing_dt = datetime.datetime.fromisoformat(existing_time_str)
+            requested_dt = datetime.datetime.fromisoformat(requested_time_str)
+        except (ValueError, TypeError):
+            # unparseable - fail toward the exact-match check rather than
+            # silently treating an unparseable time as never conflicting
+            return existing_time_str == requested_time_str
+        delta_minutes = abs((requested_dt - existing_dt).total_seconds()) / 60
+        return delta_minutes < buffer_minutes
+
     def _schedule(self, ctx: str, payload: dict, env: Envelope):
         # tuple 5/7: minimum-notice rules for occupied properties always
         # apply, never squeezed for same-day requests
@@ -243,20 +278,47 @@ class Spoke06ShowingScheduler:
                                     "required_notice_hours": required}))
                 return
 
-        existing = self.confirmed_showings.get(ctx, [])
+        existing = self.confirmed_showings.setdefault(ctx, [])
         # tuple 9: overlapping showings -> sequence with buffer, never
         # double-book and hope
         requested_time = payload.get("requested_time")
         buffer_minutes = payload.get("buffer_minutes", 30)
-        conflict = any(s.get("time") == requested_time for s in existing)
-        if conflict:
+        conflicting = [s for s in existing
+                      if self._time_conflict(s.get("time"), requested_time,
+                                             buffer_minutes)]
+        if conflicting:
             protected = payload.get("protected_deadline", False)
             if not protected:
                 self.hub.send(_env("06", "queue", "clarification.request", ctx,
-                                   {"reason": "calendar conflict - "
-                                             "sequencing with buffer, "
-                                             "alternatives offered"}))
+                                   {"reason": "calendar conflict within "
+                                             f"{buffer_minutes}min buffer - "
+                                             "sequencing required",
+                                    "conflicting_times": [s["time"] for s in conflicting]}))
                 return
+            # "protected deadline wins" must actually RESOLVE the
+            # collision, not just ignore the check and schedule over it.
+            # Was: both showings ended up "confirmed" in state, and the
+            # bumped party got no cancellation, no notification, nothing
+            # - a real double-booking, contradicting this same tuple's
+            # own "never double-book and hope". Fixed: the bumped
+            # showing(s) are actually removed and the affected party is
+            # notified.
+            for bumped in conflicting:
+                existing.remove(bumped)
+                self.hub.ingest_spoke_trace(
+                    "06", env.envelope_id,
+                    thought=f"protected-deadline request at {requested_time!r} "
+                            f"bumps existing showing at {bumped['time']!r} - "
+                            f"removing it and notifying the affected party, "
+                            f"not leaving both marked confirmed",
+                    result=f"bumped: {bumped['time']!r}")
+                self.hub.send(_env("06", "11", "client.message.request", ctx,
+                                   {"template": "showing_bumped_notice",
+                                    "original_time": bumped["time"],
+                                    "reason": "protected_deadline_priority"}))
+                self.hub.send(_env("06", "14", "interaction.log", ctx,
+                                   {"kind": "showing_bumped",
+                                    "time": bumped["time"]}))
 
         self.hub.send(_env("06", "18", "calendar.event", ctx,
                            {"event": "showing", "time": requested_time,
@@ -270,7 +332,7 @@ class Spoke06ShowingScheduler:
                                {"kind": "open_house_signage"}))
 
         showing = {"time": requested_time, "confirmed": True}
-        self.confirmed_showings.setdefault(ctx, []).append(showing)
+        existing.append(showing)
         self.hub.ingest_spoke_trace(
             "06", env.envelope_id,
             thought="all gates cleared (buyer agreement on file, identity "

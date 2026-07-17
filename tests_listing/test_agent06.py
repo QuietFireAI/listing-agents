@@ -180,6 +180,71 @@ def test_overlapping_showing_conflict_holds_for_clarification(tmp_path):
     assert any("calendar conflict" in c["payload"]["reason"] for c in clar)
 
 
+# ------------------------------------------------- THE FIX: buffer window
+def test_near_miss_within_buffer_window_is_now_a_conflict(tmp_path):
+    """Tuple 9: 'sequence with buffer, never double-book and hope'. Was:
+    the conflict check was exact-time-match only - buffer_minutes rode
+    along in the calendar.event payload as pure data, never compared
+    against anything. Two showings 15 minutes apart with
+    buffer_minutes=30 produced zero conflict detection."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "s-020"
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00",
+                                           buffer_minutes=30)))
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:15",
+                                           buffer_minutes=30)))
+    clar = persisted(hub, "clarification.request")
+    assert any("calendar conflict" in c["payload"]["reason"] for c in clar)
+    # the second (conflicting) showing must not have been confirmed
+    assert len(spoke.confirmed_showings[ctx]) == 1
+
+
+def test_showing_outside_buffer_window_is_not_a_conflict(tmp_path):
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "s-021"
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00",
+                                           buffer_minutes=30)))
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T11:00",
+                                           buffer_minutes=30)))
+    clar = persisted(hub, "clarification.request")
+    assert not any("calendar conflict" in c["payload"].get("reason", "")
+                  for c in clar)
+    assert len(spoke.confirmed_showings[ctx]) == 2
+
+
+# ------------------------------------- THE FIX: protected deadline bump
+def test_protected_deadline_bumps_and_notifies_the_displaced_showing(tmp_path):
+    """'Protected deadline wins' was implemented as 'ignore the conflict
+    check and schedule anyway' - both showings ended up marked confirmed
+    in state, and the bumped party got no cancellation, no notification,
+    nothing. A real double-booking, contradicting this same tuple's own
+    'never double-book and hope'."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "s-022"
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00")))
+    assert len(spoke.confirmed_showings[ctx]) == 1
+
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00",
+                                           protected_deadline=True)))
+    # the original showing must be gone, not sitting alongside the new one
+    times = [s["time"] for s in spoke.confirmed_showings[ctx]]
+    assert times == ["2026-08-01T10:00"]
+    assert len(spoke.confirmed_showings[ctx]) == 1
+
+    bump_notices = [e for e in persisted(hub, "client.message.request")
+                    if e["payload"].get("template") == "showing_bumped_notice"]
+    assert bump_notices, "the displaced party must be notified, not silently dropped"
+    bump_logs = [e for e in persisted(hub, "interaction.log")
+                if e["payload"].get("kind") == "showing_bumped"]
+    assert bump_logs
+
+
 def test_feedback_ask_stops_after_two_never_asks_a_third(tmp_path):
     """tuple 10 was declared (feedback_asks dict) but never actually
     implemented - nothing incremented or read it. Proves the real fix."""
