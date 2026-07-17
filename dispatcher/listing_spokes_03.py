@@ -40,6 +40,8 @@ class Spoke03LeadNurture:
          undid it - a frequency complaint silently killed the sequence
          forever, identical in effect to the opt-out this tuple explicitly
          says it isn't. This branch now explicitly resumes the sequence.
+         Fixed 2026-07-17: the "+ confirm" half never sent anything to
+         the client either - now sends a real client-facing confirmation.
       3. sequence content has expired market data -> regenerate or skip the touch
       4. two sequences eligible -> run neither until human picks, never
          stack. Confirmed 2026-07-16 (owner) distinct from tuple 10: this
@@ -49,9 +51,18 @@ class Spoke03LeadNurture:
       5. engagement spike -> rescore via 02, never convert signal into
          direct outreach itself
       6. contact replies STOP/equivalent -> suppress across ALL channels
-         immediately
+         immediately, confirmation (channel rules generally require it).
+         Fixed 2026-07-17: only an internal interaction.log entry to 14
+         existed - a system-of-record entry, not a message to the client.
+         Now sends a real confirmation, reusing Agent 01's opt_out_
+         confirmed template rather than inventing a near-duplicate.
       7. step lands on legal holiday/outside contact hours -> shift to next
-         legal window, never send anyway
+         legal window, never send anyway. Fixed 2026-07-17: zero
+         implementing code existed despite this docstring previously
+         listing it as done - send_scheduled_touch() only ever checked
+         compliance_status/paused/frequency_cap. Now checks a real
+         legal_contact_hours window (constructor tunable) and an explicit
+         holiday flag before sending.
       8. engagement spike mid-sequence -> pause + lead.rescored, never keep
          dripping on a hot signal
       9. content references a listing that changed status -> pull the step,
@@ -71,13 +82,23 @@ class Spoke03LeadNurture:
     """
 
     # TUNABLE (owner-ratified 2026-07-16): frequency_cap_per_week=3.
+    # TUNABLE (added 2026-07-17): legal_contact_hours=(8, 21) - matches
+    # Agent 11's quiet_hours convention (24h clock, wraps if start>end).
     # See docs/TUNING_MANUAL.md to change.
-    def __init__(self, hub, frequency_cap_per_week: int = 3):
+    def __init__(self, hub, frequency_cap_per_week: int = 3,
+                 legal_contact_hours: tuple[int, int] = (8, 21)):
         self.hub = hub
         self.active_sequences: dict[str, dict] = {}  # ctx -> {sequence_id, paused, touch_count}
         self.frequency_cap_per_week = frequency_cap_per_week
+        self.legal_contact_hours = legal_contact_hours
         self.touch_log: dict[str, list] = {}  # ctx -> list of touch timestamps/weeks
         hub.register("03", self.handle)
+
+    def _in_legal_contact_hours(self, hour: int) -> bool:
+        start, end = self.legal_contact_hours
+        if start > end:  # wraps midnight
+            return hour >= start or hour < end
+        return start <= hour < end
 
     def _legal_line_hit(self, text: str) -> str | None:
         low = text.lower()
@@ -98,17 +119,42 @@ class Spoke03LeadNurture:
                            {"purpose": "market_update"}))
         return True
 
-    def send_scheduled_touch(self, ctx: str, content: dict, today_week: str):
+    def send_scheduled_touch(self, ctx: str, content: dict, today_week: str,
+                             hour: int | None = None, is_legal_holiday: bool = False):
         """Actually delivers the next scheduled touch, enforcing the
         frequency cap for real. Previously: touch_log was declared but
         never read or written anywhere, and frequency_cap_per_week only
         ever decreased on a complaint - nothing checked touches sent this
         week against the cap before sending, meaning the whole mechanism
         was decorative. Fixed: real enforcement, using the log that was
-        already sitting there unused."""
+        already sitting there unused.
+
+        Fixed 2026-07-17 (tuple 7): a step landing on a legal holiday or
+        outside contact hours must shift to the next legal window, never
+        send anyway - this had zero implementing code despite the class
+        docstring listing it as done. Held here, matching the same status-
+        string pattern as the frequency-cap hold; the actual "shift to
+        next window" retry is the caller's job once told not now, same as
+        every other scheduled-sweep method in this codebase."""
         seq = self.active_sequences.get(ctx)
         if not seq or seq.get("compliance_status") != "cleared" or seq.get("paused"):
             return "not_eligible"
+
+        if is_legal_holiday:
+            self.hub.ingest_spoke_trace(
+                "03", "internal",
+                thought=f"ctx={ctx!r}: today is a legal holiday - shifting "
+                        f"to the next legal window, never sending anyway",
+                result="held: legal_holiday")
+            return "held_legal_holiday"
+        if hour is not None and not self._in_legal_contact_hours(hour):
+            self.hub.ingest_spoke_trace(
+                "03", "internal",
+                thought=f"ctx={ctx!r}: hour={hour} is outside legal contact "
+                        f"hours {self.legal_contact_hours} - shifting to "
+                        f"the next legal window, never sending anyway",
+                result="held: outside_contact_hours")
+            return "held_outside_contact_hours"
 
         weeks_log = self.touch_log.setdefault(ctx, [])
         this_week_count = sum(1 for w in weeks_log if w == today_week)
@@ -235,7 +281,14 @@ class Spoke03LeadNurture:
 
             low = message.lower().strip()
             if low in ("stop", "unsubscribe", "opt out", "optout"):
-                # tuple 6: explicit STOP -> full suppression, all channels
+                # tuple 6: explicit STOP -> full suppression, all channels,
+                # confirmation (channel rules generally require it - SMS/
+                # CTIA mandates a one-time confirmation reply). Fixed
+                # 2026-07-17: only an internal interaction.log entry to 14
+                # existed - that's a system-of-record entry, not a message
+                # to the client. Nothing ever actually told the client the
+                # stop was received. Reuses Agent 01's opt_out_confirmed
+                # template (same underlying confirmation, same wording).
                 if seq:
                     seq["consent"] = {k: "no" for k in seq.get("consent", {})}
                     seq["paused"] = True
@@ -243,11 +296,14 @@ class Spoke03LeadNurture:
                     "03", env.envelope_id,
                     thought="explicit STOP received - full opt-out, "
                             "suppression across ALL channels immediately, "
-                            "propagating to CRM same-day",
+                            "propagating to CRM same-day, confirming to "
+                            "the client once",
                     result="opted out: all channels")
                 self.hub.send(_env("03", "14", "interaction.log", ctx,
                                    {"kind": "opt_out", "scope": "all_channels",
                                     "consent": seq["consent"] if seq else {}}))
+                self.hub.send(_env("03", "11", "client.message.request", ctx,
+                                   {"template": "opt_out_confirmed"}))
                 return
 
             if "stop sending so many" in low or "too many" in low:
@@ -258,17 +314,23 @@ class Spoke03LeadNurture:
                 # emailing me too much" silently killed their entire
                 # sequence forever, instead of continuing at a lower
                 # cadence as this tuple actually requires. Fixed: this
-                # reply type explicitly resumes the sequence.
+                # reply type explicitly resumes the sequence. Fixed
+                # 2026-07-17: the "+ confirm" half never sent anything
+                # to the client either - reducing cadence silently isn't
+                # the same as confirming it to the person who asked.
                 self.frequency_cap_per_week = max(1, self.frequency_cap_per_week - 1)
                 if seq:
                     seq["paused"] = False
                 self.hub.ingest_spoke_trace(
                     "03", env.envelope_id,
                     thought="frequency complaint, not an explicit opt-out - "
-                            "reducing cadence and confirming, sequence "
-                            "resumes (not left paused) at lower frequency",
+                            "reducing cadence and confirming to the client, "
+                            "sequence resumes (not left paused) at lower "
+                            "frequency",
                     result=f"frequency reduced to {self.frequency_cap_per_week}/wk, "
                           f"resumed")
+                self.hub.send(_env("03", "11", "client.message.request", ctx,
+                                   {"template": "frequency_reduced_confirmed"}))
                 return
 
             # substantive question mid-drip -> route to 11, gated human review

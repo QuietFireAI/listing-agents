@@ -253,6 +253,11 @@ def test_explicit_stop_suppresses_all_channels(tmp_path):
                               "verbatim_available": True})
     hub.send(env)
     assert spoke.active_sequences["n-008"]["consent"] == {"call": "no", "text": "no"}
+    # THE FIX: tuple 6 requires an actual client-facing confirmation, not
+    # just the internal interaction.log system-of-record entry.
+    confirmations = persisted(hub, "client.message.request")
+    assert any(c["payload"].get("template") == "opt_out_confirmed" for c in confirmations), \
+        "STOP must send a real client-facing confirmation, not just log internally"
 
 
 def test_engagement_spike_pauses_and_rescores(tmp_path):
@@ -388,7 +393,67 @@ def test_frequency_complaint_reduces_cadence_but_does_not_kill_sequence(tmp_path
     assert spoke.frequency_cap_per_week == 2, "cadence must actually reduce"
     assert spoke.active_sequences[ctx]["paused"] is False, \
         "sequence must resume after a frequency complaint, not stay paused forever"
+    # THE FIX: "+ confirm" half of the tuple never sent anything before.
+    confirmations = persisted(hub, "client.message.request")
+    assert any(c["payload"].get("template") == "frequency_reduced_confirmed"
+              for c in confirmations), \
+        "reducing cadence must be confirmed to the client, not just done silently"
 
     result = spoke.send_scheduled_touch(ctx, {"body": "next touch"}, "2026-W32")
     assert result == "sent", \
         "a touch must actually be sendable after the complaint is handled"
+
+
+# ------------------------------------- THE FIX: tuple 7, legal hours/holiday
+def test_touch_held_outside_legal_contact_hours(tmp_path):
+    """Was: zero implementing code - send_scheduled_touch only ever
+    checked compliance_status/paused/frequency_cap, despite the class
+    docstring listing this tuple as done."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub, legal_contact_hours=(8, 21))
+    hub.on_turn_start()
+    ctx = "hours-001"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+
+    result = spoke.send_scheduled_touch(ctx, {"body": "late touch"}, "2026-W32", hour=23)
+    assert result == "held_outside_contact_hours"
+    assert not persisted(hub, "client.message.request")
+
+
+def test_touch_held_on_legal_holiday(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub)
+    hub.on_turn_start()
+    ctx = "hours-002"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+
+    result = spoke.send_scheduled_touch(ctx, {"body": "holiday touch"}, "2026-W32",
+                                        hour=10, is_legal_holiday=True)
+    assert result == "held_legal_holiday"
+    assert not persisted(hub, "client.message.request")
+
+
+def test_touch_sends_normally_inside_legal_contact_hours(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke03LeadNurture(hub, legal_contact_hours=(8, 21))
+    hub.on_turn_start()
+    ctx = "hours-003"
+    hub.send(nurture_env(ctx, {"consent": {"email": "yes"}, "sequence_id": "seq_a"}))
+    verdict = Envelope(from_agent="17", to_agent="03", intent="content.verdict",
+                      client_context_id=ctx, payload={"verdict": "approved"},
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    hub.send(verdict)
+
+    result = spoke.send_scheduled_touch(ctx, {"body": "daytime touch"}, "2026-W32", hour=14)
+    assert result == "sent"

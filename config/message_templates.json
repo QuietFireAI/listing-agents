@@ -104,8 +104,15 @@
   {
    "template_id": "opt_out_confirmed",
    "audience": "client",
-   "purpose": "Confirm a mid-capture request to stop all contact (Agent 01 tuple 15, added 2026-07-17 - this agent had no route to send this confirmation at all before)",
+   "purpose": "Confirm a mid-capture request to stop all contact (Agent 01 tuple 15, added 2026-07-17 - this agent had no route to send this confirmation at all before). Also reused by Agent 03 tuple 6 (explicit STOP during an active nurture sequence) - same underlying confirmation, same wording.",
    "body": "Understood - we won't contact you again. If that changes, you're welcome to reach back out any time.",
+   "approved_by": "<owner name/date>"
+  },
+  {
+   "template_id": "frequency_reduced_confirmed",
+   "audience": "client",
+   "purpose": "Confirm a frequency complaint during an active nurture sequence (Agent 03 tuple 2, added 2026-07-17 - cadence was reduced silently before, with nothing ever telling the client)",
+   "body": "Got it - we'll cut back on how often we reach out. You'll still hear from us, just less frequently.",
    "approved_by": "<owner name/date>"
   },
   {
