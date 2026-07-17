@@ -25,6 +25,13 @@
    "approved_by": "<owner name/date>"
   },
   {
+   "template_id": "showing_bumped_notice",
+   "audience": "buyer_or_seller",
+   "purpose": "A confirmed showing was displaced by a protected-deadline booking (added 2026-07-17, missed in the original draft compilation since the underlying fix landed after this file was last generated)",
+   "body": "Your showing originally scheduled for {{original_time}} needs to be rescheduled due to a scheduling conflict. A team member will follow up shortly with new times.",
+   "approved_by": "<owner name/date>"
+  },
+  {
    "template_id": "feedback_request",
    "audience": "showing_agent_or_buyer",
    "purpose": "Neutral, no-reproach request for feedback after a showing",
