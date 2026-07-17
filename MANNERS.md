@@ -39,9 +39,11 @@ counter-mechanism.
   (a) every playbook phase gate, (b) immediately after any context
   compaction/summarization event. These fire always, in every vertical.
 - One numeric backstop exists: every N agent turns with no other trigger.
-  N = 10, PROVISIONAL AND ARBITRARY - no empirical basis yet; after-action
-  data (manners re-injection counts vs. deviation rates) sets the real value,
-  which then FREEZES to a constant. Open discussion item with the owner.
+  N = 10, RATIFIED (owner, 2026-07-17) as a deliberate placeholder - no
+  empirical basis existed at ratification and none was invented to justify
+  it; after-action data (manners re-injection counts vs. deviation rates)
+  will set the real value when it exists, which then FREEZES to a constant.
+  Decided, not open, as of this ratification.
 - The file's content hash is registered at boot attestation (DISPATCHER_CORE);
   a changed hash without signed authorization = tainted = halt.
 - Agents reference manners BEFORE decisions (DECISIONS.md) and playbooks:
@@ -52,4 +54,4 @@ MANNERS + DISPATCHER_CORE > identity module hard lines > DECISIONS.md (tuple
 layer) > playbooks > task judgment. A lower layer contradicting a higher layer
 is a spec defect: halt, flag, human.
 
-Status: v0.2 ratified 2026-07-10 (owner sign-off) - re-injection triggers are CONSTANTS per §Re-injection (the prior status line contradicted that section and was the bug); backstop N=10 PROVISIONAL pending after-action data. Trigger instrumentation runtime-tested (dispatcher-agents suite); conduct itself not runtime-tested.
+Status: v0.2 ratified 2026-07-10 (owner sign-off) - re-injection triggers are CONSTANTS per §Re-injection (the prior status line contradicted that section and was the bug); backstop N=10 RATIFIED 2026-07-17 as a deliberate placeholder, revisit when after-action data exists. Trigger instrumentation runtime-tested (dispatcher-agents suite); conduct itself not runtime-tested.

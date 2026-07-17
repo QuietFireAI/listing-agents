@@ -10,10 +10,11 @@ a real gap, not an intentional omission.
 parameters missed in the first sweep because they're dict/set-shaped, not
 simple numerics - the original grep pattern only caught `int`/`float`
 defaults. Also found 2 core-level (dispatcher-agents, not listing-agents)
-parameters that are self-flagged in their own code comments as
-provisional and never actually ratified - those are NOT added to the
-Ratified table below; see "Unresolved" section, because presenting them
-as settled would misrepresent their actual status.
+parameters that were self-flagged in their own code comments as
+provisional and never actually ratified - discussed directly with the
+owner the same day and ratified as deliberate placeholders (see their own
+section below), rather than either silently treated as settled or left
+open.
 
 **How to retune any of these:** each one is a constructor keyword argument.
 Change it at the point where the agent is instantiated (wherever your
@@ -84,29 +85,23 @@ override), edit the source line directly — there's no single agent-level
 constructor knob for these, by design, since different platforms may
 legitimately warrant different defaults.
 
-## Unresolved / provisional — needs an actual owner decision, not documentation
+## Ratified as deliberate placeholders (owner, 2026-07-17) — core, not this repo
 
 These two live in **dispatcher-agents** (the shared core, not this repo),
 which is why they weren't caught in a listing-agents-only sweep before.
-Both are self-flagged in their own code/doc comments as never having been
-truly decided - "PROVISIONAL AND ARBITRARY, no empirical basis" is the
-literal language at the source. Recording them here anyway since this is
-the one place meant to hold every tunable in the stack, but they belong
-in a different bucket than the table above: these need you to actually
-pick a number (or explicitly ratify the placeholder), not just review a
-default that's already working.
+Both were previously self-flagged in their own code/doc comments as never
+having been truly decided - "PROVISIONAL AND ARBITRARY, no empirical
+basis" was the literal language at the source. **Discussed directly with
+the owner 2026-07-17: both ratified as deliberate placeholders, not left
+open.** Neither number has empirical backing - that was true before
+ratification and remains true now - but "nobody has decided" and "we've
+decided to accept this placeholder" are different states, and these are
+now the second one. Revisit when real after-action/fade-rate data exists.
 
-| Location | Parameter | Current value | Controls | Status |
-|---|---|---|---|---|
-| `dispatcher-agents/dispatcher/hub.py` `Hub.__init__` | `loop_threshold` | `20` | Max envelopes per `(client_context_id, intent)` pair before the hub suspends the loop into `clarification.request`, treating it as a possible runaway | **Never ratified.** Code comment: "20 is PROVISIONAL AND ARBITRARY (no spec number, no empirical basis) - after-action data sets the real value." |
-| `dispatcher-agents/MANNERS.md` §Re-injection | backstop `N` | `10` | Agent turns allowed with no other MANNERS re-injection trigger (phase gate, post-compaction) before a mandatory turn-backstop re-injection fires anyway | **Never ratified.** MANNERS.md's own text: "N = 10, PROVISIONAL AND ARBITRARY - no empirical basis yet... Open discussion item with the owner." The file's own v0.2 ratification note (2026-07-10) explicitly carves this one number out as still pending even though the rest of the file was signed off. |
-
-Both of these are real, working values today (the system doesn't crash or
-misbehave with them) - "provisional" here means "nobody has actually
-decided this is right," not "this is broken." Worth an explicit decision
-either way: pick real numbers once there's after-action data, or
-consciously ratify 20/10 as good enough and update both comments to say
-so.
+| Location | Parameter | Value | Controls |
+|---|---|---|---|
+| `dispatcher-agents/dispatcher/hub.py` `Hub.__init__` | `loop_threshold` | `20` | Max envelopes per `(client_context_id, intent)` pair before the hub suspends the loop into `clarification.request`, treating it as a possible runaway |
+| `dispatcher-agents/MANNERS.md` §Re-injection | backstop `N` | `10` | Agent turns allowed with no other MANNERS re-injection trigger (phase gate, post-compaction) before a mandatory turn-backstop re-injection fires anyway |
 
 ## Also worth knowing about (not tuning-manual material, but adjacent)
 
