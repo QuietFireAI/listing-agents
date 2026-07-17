@@ -62,6 +62,7 @@ Dispatcher returns an `ack`.
 | OUT | → 11 / 12 / 14 | Status change and MLS-entry confirmations | `status.update` |
 | IN | ← 06 Showing Scheduler | Status check before scheduling | `status.request` |
 | OUT | → 06 Showing Scheduler | Current listing status | `status.response` |
+| OUT | → 17 Compliance | Withdrawal requested while under contract | `compliance.notice` |
 | OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other

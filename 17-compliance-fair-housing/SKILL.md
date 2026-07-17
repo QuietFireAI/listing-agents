@@ -58,7 +58,7 @@ Dispatcher returns an `ack`.
 | OUT | → submitting agent | Verdict with itemized flags | `content.verdict` |
 | OUT | → HITL queue | Flagged content requiring licensed review | `escalation.legal_line` |
 | OUT | → 14 CRM & Pipeline | Review log | `interaction.log` |
-| IN | ← 10 Market Data | Data-derived compliance concern | `compliance.notice` |
+| IN | ← 10 Market Data / 05 MLS & Listing Mgmt | Data-derived compliance concern | `compliance.notice` |
 | OUT | → human | Compliance activity report | `report.package` |
 | OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 

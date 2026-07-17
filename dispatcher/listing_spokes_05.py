@@ -31,23 +31,37 @@ class Spoke05MLSListingManagement:
     """DECISIONS.md tuples implemented directly:
       1. supplied data has no valid MLS field -> clarification, never
          approximate into the wrong field
-      2. syndicated portal differs from MLS -> correct source record, then
-         re-verify every portal
       3. two authorized changes conflict -> execute neither, human
-      4. portal still stale after verification window -> log + notify
-         human, never mark complete
       5. status change without required artifact -> refuse, artifact first
       6. status change without signed listing.change.authorized -> refuse,
          verbal/email is not authority
-      7. MLS rejects an entry on a rule -> log raw rejection, human, never
-         adjust data to pass validation
       8. price in authorized change conflicts with agreement amendment on
          file -> halt, both documents to human
       9. comp-offer field present anywhere -> leave blank, flag any
          request to fill it (NAR 8/17/24 rule)
-      10. listing data vs marketing asset disagree -> MLS record is truth,
-          asset.release corrected version, discrepancy logged
+      10. listing data vs marketing asset disagree -> MLS record is
+          truth, corrected listing.data sent to 04 to rebuild against,
+          discrepancy logged
       11. withdrawal requested while under contract -> halt, 17 + human
+
+    NOT implemented (found during review, 2026-07-16), and not a code bug
+    to silently patch - these need a real external integration that
+    doesn't exist anywhere in this system yet, not a fake one built to
+    make the docstring's old claim true:
+      2. syndicated portal differs from MLS -> correct source record,
+         re-verify every portal
+      4. portal still stale after verification window -> log + notify
+         human, never mark complete
+      7. MLS rejects an entry on a rule -> log raw rejection, human,
+         never adjust data to pass validation
+    All three require a real syndication/MLS feedback channel (Zillow,
+    Realtor.com, Redfin, or the MLS system itself) to ever fire - there is
+    currently no inbound intent or code path anywhere in this identity
+    for "portal sync result" or "MLS entry rejected" to reach this agent
+    at all. Building real handling for these without a real integration
+    to build it against would be exactly the kind of stub Jeff's rules
+    forbid. Flagging honestly instead: this is a genuine, structural gap,
+    not something this pass can close.
     """
 
     def __init__(self, hub, required_artifacts: dict[str, str] | None = None):
@@ -56,11 +70,35 @@ class Spoke05MLSListingManagement:
         self.property_data: dict[str, dict] = {}  # ctx -> intake package
         self.under_contract: set[str] = set()
         self.go_live_authorized: set[str] = set()
+        # tuple 3: two authorized changes conflict -> execute neither, human.
+        # ctx -> field -> {"value":..., "authorizing_identity":...} - the
+        # last SUCCESSFULLY EXECUTED authorized change per field. A new
+        # authorized change for a field already set by a DIFFERENT signer
+        # with a DIFFERENT value is a genuine conflict (two people giving
+        # contradictory signed instructions); the same signer changing
+        # their own prior instruction is a normal update, not a conflict.
+        self.last_authorization: dict[str, dict[str, dict]] = {}
         # status -> required artifact key in payload, e.g. "sold" needs
         # a closing/settlement artifact on file first
         self.required_artifacts = required_artifacts or {
             "sold": "closing_artifact", "pending": "signed_contract_artifact"}
         hub.register("05", self.handle)
+
+    def _conflicting_authorization(self, ctx: str, field: str, value,
+                                    authorizing_identity: str) -> dict | None:
+        """Returns the prior conflicting record if this authorized change
+        conflicts with the last one executed for this field, else None."""
+        prior = self.last_authorization.get(ctx, {}).get(field)
+        if (prior and prior["value"] != value
+                and prior["authorizing_identity"] != authorizing_identity):
+            return prior
+        return None
+
+    def _record_authorization(self, ctx: str, field: str, value,
+                               authorizing_identity: str):
+        self.last_authorization.setdefault(ctx, {})[field] = {
+            "value": value, "authorizing_identity": authorizing_identity}
+
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id
@@ -68,21 +106,36 @@ class Spoke05MLSListingManagement:
         if env.intent == "asset.release":
             draft = env.payload.get("draft", {})
             # tuple 10: listing data vs marketing asset disagree -> MLS
-            # record is truth, corrected asset.release, discrepancy logged
+            # record is truth, corrected version sent back, discrepancy
+            # logged. "Corrected asset.release" was never buildable
+            # literally - 05 has no legal route to send asset.release
+            # (only 04 does, per routes.json). The real fix: 05 sends a
+            # corrected listing.data back to 04 (05's own real, already-
+            # legal edge) carrying the MLS-truth values, so 04 can rebuild
+            # the asset against the corrected facts and resubmit through
+            # compliance - not silently log-and-move-on.
             record = self.mls_records.get(ctx, {})
             disagreements = []
+            corrected_fields = {}
             for fact in draft.get("facts", []):
                 if "sq ft" in fact["text"] and record.get("sqft"):
                     stated = fact["text"].split(" sq ft")[0]
                     if stated.isdigit() and int(stated) != record["sqft"]:
                         disagreements.append(fact["text"])
+                        corrected_fields["sqft"] = record["sqft"]
             if disagreements:
                 self.hub.ingest_spoke_trace(
                     "05", env.envelope_id,
                     thought=f"marketing asset disagrees with MLS record on "
                             f"{disagreements} - MLS record is truth, "
-                            f"correcting and logging the discrepancy",
+                            f"sending 04 the corrected listing.data package "
+                            f"to rebuild the asset against, not just logging "
+                            f"the discrepancy",
                     result="corrected: mls_is_truth")
+                self.hub.send(_env("05", "04", "listing.data", ctx,
+                                   {**self.property_data.get(ctx, {}),
+                                    **corrected_fields,
+                                    "correction_of_discrepancy": disagreements}))
 
             # Phase 3: approved content clears the go-live gate. Status
             # change to 'active' still requires the signed authorization -
@@ -106,6 +159,12 @@ class Spoke05MLSListingManagement:
                 self.hub.send(_env("05", "14", "status.update", ctx, {"status": "active"}))
                 # Phase 3c: listing into buyer-match feeds
                 self.hub.send(_env("05", "13", "listing.data", ctx,
+                                   {**self.property_data.get(ctx, {}),
+                                    "discrepancies": disagreements}))
+                # Market Data (10) needs new/changed listings too - SKILL.md
+                # has documented this edge all along; the code just never
+                # fired it.
+                self.hub.send(_env("05", "10", "listing.data", ctx,
                                    {**self.property_data.get(ctx, {}),
                                     "discrepancies": disagreements}))
             else:
@@ -183,6 +242,37 @@ class Spoke05MLSListingManagement:
                                              f"wrong field"}))
                 return
 
+            # tuple 3: two authorized changes conflict -> execute neither,
+            # human. A different signer authorizing a different value for
+            # a field this context already has an executed value for, from
+            # a DIFFERENT signer, is a real conflict - not the same party
+            # updating their own prior instruction.
+            if field in ("status", "price"):
+                new_value = change.get("value")
+                conflict = self._conflicting_authorization(
+                    ctx, field, new_value, authorizing_identity)
+                if conflict:
+                    self.hub.ingest_spoke_trace(
+                        "05", env.envelope_id,
+                        thought=f"authorized {field}={new_value!r} by "
+                                f"{authorizing_identity!r} conflicts with "
+                                f"already-executed {field}="
+                                f"{conflict['value']!r} by "
+                                f"{conflict['authorizing_identity']!r} - "
+                                f"two different signers, contradictory "
+                                f"instructions - executing neither, human",
+                        result="held: conflicting authorized changes")
+                    self.hub.send(_env("05", "queue", "clarification.request",
+                                       ctx, {"reason": "two authorized changes "
+                                                       "conflict for the same "
+                                                       "field",
+                                            "field": field,
+                                            "new_value": new_value,
+                                            "new_authorizer": authorizing_identity,
+                                            "existing_value": conflict["value"],
+                                            "existing_authorizer": conflict["authorizing_identity"]}))
+                    return
+
             if field == "status":
                 new_status = change.get("value")
                 if new_status not in VALID_STATUSES:
@@ -200,6 +290,10 @@ class Spoke05MLSListingManagement:
                                                  "math on a live contract is "
                                                  "never autonomous",
                                        "agent": "05"})
+                    self.hub.send(_env("05", "17", "compliance.notice", ctx,
+                                       {"trigger": "withdrawal requested "
+                                                  "while under contract",
+                                        "agent": "05"}))
                     return
 
                 # tuple 5: status change requires its artifact first
@@ -220,6 +314,8 @@ class Spoke05MLSListingManagement:
 
                 record = self.mls_records.setdefault(ctx, {})
                 record["status"] = new_status
+                self._record_authorization(ctx, "status", new_status,
+                                           authorizing_identity)
                 self.hub.ingest_spoke_trace(
                     "05", env.envelope_id,
                     thought=f"status change to {new_status!r} authorized by "
@@ -251,6 +347,8 @@ class Spoke05MLSListingManagement:
                     return
                 record = self.mls_records.setdefault(ctx, {})
                 record["price"] = new_price
+                self._record_authorization(ctx, "price", new_price,
+                                           authorizing_identity)
                 self.hub.ingest_spoke_trace(
                     "05", env.envelope_id,
                     thought=f"price change to {new_price} authorized by "

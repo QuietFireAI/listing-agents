@@ -474,7 +474,8 @@
   {
    "intent": "compliance.notice",
    "senders": [
-    "10"
+    "10",
+    "05"
    ],
    "receivers": [
     "17"

@@ -23,11 +23,12 @@ def make_hub(tmp_path, **kw):
     return hub, signer
 
 
-def authorized_change(signer, ctx, change):
+def authorized_change(signer, ctx, change, authorizing_identity="human"):
     env = Envelope(from_agent="human", to_agent="05",
                   intent="listing.change.authorized",
                   client_context_id=ctx, payload=change,
-                  provenance={"source": "human", "captured_at": "runtime",
+                  provenance={"source": authorizing_identity,
+                              "captured_at": "runtime",
                               "verbatim_available": True})
     signer.sign(env)
     return env
@@ -201,3 +202,106 @@ def test_approved_asset_without_go_live_authorization_holds_at_entry(tmp_path):
     hub.send(env)
     assert spoke.mls_records.get("p-013", {}).get("status") != "active"
     assert not persisted(hub, "status.update")
+
+
+# ------------------------------------------- THE FIX: conflicting changes
+def test_conflicting_authorized_changes_from_different_signers_holds(tmp_path):
+    """Tuple 3: two authorized changes conflict -> execute neither, human.
+    Was: no conflict detection existed at all - any two signed changes for
+    the same field just both executed in sequence, last write wins."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub)
+    hub.on_turn_start()
+    ctx = "p-020"
+    hub.send(authorized_change(signer, ctx, {"field": "price", "value": 500_000},
+                               authorizing_identity="agent-a"))
+    assert spoke.mls_records[ctx]["price"] == 500_000
+
+    hub.send(authorized_change(signer, ctx, {"field": "price", "value": 510_000},
+                               authorizing_identity="agent-b"))
+    clar = persisted(hub, "clarification.request")
+    assert any("conflict" in c["payload"]["reason"] for c in clar)
+    # neither the new value executed, nor was the prior value disturbed
+    assert spoke.mls_records[ctx]["price"] == 500_000
+
+
+def test_same_signer_updating_own_prior_change_is_not_a_conflict(tmp_path):
+    """The same authorized party correcting their own prior instruction is
+    a normal update, not tuple 3's conflict - distinguishing this was the
+    actual design decision, not just detecting any two differing values."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub)
+    hub.on_turn_start()
+    ctx = "p-021"
+    hub.send(authorized_change(signer, ctx, {"field": "price", "value": 500_000},
+                               authorizing_identity="agent-a"))
+    hub.send(authorized_change(signer, ctx, {"field": "price", "value": 505_000},
+                               authorizing_identity="agent-a"))
+    assert spoke.mls_records[ctx]["price"] == 505_000
+    assert not any("conflict" in c["payload"].get("reason", "")
+                  for c in persisted(hub, "clarification.request"))
+
+
+# --------------------------------- THE FIX: corrected listing.data to 04
+def test_asset_mls_discrepancy_sends_corrected_listing_data_to_04(tmp_path):
+    """Tuple 10: MLS record is truth, corrected version sent, discrepancy
+    logged. Was: discrepancy detected and logged, but nothing corrected
+    ever went anywhere - '05 is truth' had no downstream effect."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub)
+    hub.on_turn_start()
+    ctx = "p-022"
+    hub.send(authorized_change(signer, ctx,
+                               {"new_listing": {"sqft": 1800, "beds": 3}}))
+    spoke.mls_records[ctx]["sqft"] = 1800
+
+    env = Envelope(from_agent="04", to_agent="05", intent="asset.release",
+                  client_context_id=ctx,
+                  payload={"draft": {"facts": [{"text": "1750 sq ft",
+                                                "attribution": "per seller",
+                                                "adjective": False}]}},
+                  provenance={"source": "spoke-04", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+
+    corrections = [e for e in persisted(hub, "listing.data")
+                   if e["to_agent"] == "04"]
+    assert corrections, "05 must send 04 a corrected listing.data, not just log it"
+    assert corrections[0]["payload"]["sqft"] == 1800
+
+
+def test_go_live_sends_listing_data_to_market_data_agent_10(tmp_path):
+    """Edge-table gap: SKILL.md documented 05 -> 10 listing.data all along;
+    the code never actually sent it."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub)
+    hub.on_turn_start()
+    ctx = "p-023"
+    hub.send(authorized_change(signer, ctx,
+                               {"new_listing": {"sqft": 2000},
+                                "authorize_go_live": True}))
+    env = Envelope(from_agent="04", to_agent="05", intent="asset.release",
+                  client_context_id=ctx, payload={"draft": {"facts": []}},
+                  provenance={"source": "spoke-04", "captured_at": "runtime",
+                              "verbatim_available": True})
+    hub.send(env)
+    to_10 = [e for e in persisted(hub, "listing.data") if e["to_agent"] == "10"]
+    assert to_10, "Market Data (10) must receive listing.data on go-live"
+
+
+# ------------------------------- THE FIX: withdrawal reaches 17 AND human
+def test_withdrawal_under_contract_reaches_both_compliance_and_human(tmp_path):
+    """Tuple 11 literally says '17 + human' - was: only escalation.legal_line
+    (human queue) fired; 05 had no legal route to Compliance (17) at all."""
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke05MLSListingManagement(hub)
+    hub.on_turn_start()
+    ctx = "p-024"
+    spoke.under_contract.add(ctx)
+    hub.send(authorized_change(signer, ctx,
+                               {"field": "status", "value": "withdrawn"}))
+    assert hub.queues["escalation.legal_line"]
+    notices = persisted(hub, "compliance.notice")
+    assert any(e["to_agent"] == "17" for e in notices), \
+        "withdrawal-under-contract must also reach Compliance (17), not just human"
+
