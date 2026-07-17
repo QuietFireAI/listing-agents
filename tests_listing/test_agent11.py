@@ -26,6 +26,13 @@ def status_update(ctx, payload, frm="05"):
                                 "verbatim_available": True})
 
 
+def deadline_alert(ctx, payload, frm="07"):
+    return Envelope(from_agent=frm, to_agent="11", intent="deadline.alert",
+                    client_context_id=ctx, payload=payload,
+                    provenance={"source": f"spoke-{frm}", "captured_at": "runtime",
+                                "verbatim_available": True})
+
+
 def client_reply(ctx, payload):
     return Envelope(from_agent="external", to_agent="11", intent="client.reply",
                     client_context_id=ctx, payload=payload,
@@ -134,6 +141,83 @@ def test_angry_client_acknowledges_no_promises(tmp_path):
     assert hub.queues["escalation.complaint"]
     sends = persisted(hub, "client.message.send")
     assert any(s["payload"]["template"] == "acknowledge_no_promises" for s in sends)
+
+
+# --------------------------- THE FIX: negative_tone really escalates (P14)
+def test_negative_tone_now_actually_escalates_via_complaint_queue(tmp_path):
+    """Was: negative_tone only tagged a lead.reply to the owning business
+    agent - it never touched escalation.complaint at all. Checked the
+    ratified P14 playbook directly: step 1 is escalation.complaint
+    verbatim to the priority queue. That never happened before this fix."""
+    hub = make_hub(str(tmp_path))
+    Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+    hub.send(client_reply("c-020", {"message": "this isn't going well",
+                                    "negative_tone": True, "owning_agent": "13"}))
+    assert hub.queues["escalation.complaint"], \
+        "negative_tone must reach the real complaint queue, not just a business-agent tag"
+    complaint = hub.queues["escalation.complaint"][-1]
+    assert complaint["client_context_id"] == "c-020"
+    assert "this isn't going well" in complaint["verbatim"]
+
+
+def test_complaint_hold_blocks_scheduled_touch_until_released(tmp_path):
+    """P14 step 2: 'Outbound HOLD for that client context - no scheduled
+    touches fire' until the human releases it. Was missing entirely for
+    both tuple 2 (angry) and tuple 10 (negative_tone)."""
+    from dispatcher.signatures import Ed25519Signer, Ed25519Verifier
+    audit_path = os.path.join(str(tmp_path), f"audit-{uuid.uuid4().hex[:8]}.jsonl")
+    signer = Ed25519Signer()
+    verifier = Ed25519Verifier(signer.public_key_bytes())
+    hub = Hub(Routes(IDENTITY_ROUTES), AuditLog(audit_path),
+             signature_verifier=verifier.verifier())
+    Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+    ctx = "c-021"
+    hub.send(client_reply(ctx, {"message": "furious about this", "angry": True}))
+
+    # a routine scheduled touch lands while the complaint is still open
+    hub.send(status_update(ctx, {"template": "inspection_scheduled",
+                                 "hour": 10}))
+    sends = [s for s in persisted(hub, "client.message.send")
+            if s["client_context_id"] == ctx]
+    assert not any(s["payload"]["template"] == "inspection_scheduled" for s in sends), \
+        "a scheduled touch must not fire while the complaint hold is open"
+
+    # human releases the hold
+    release = Envelope(from_agent="human", to_agent="11", intent="config.update",
+                      client_context_id=ctx, payload={"resolve_complaint_hold": ctx},
+                      provenance={"source": "human", "captured_at": "runtime",
+                                  "verbatim_available": True})
+    signer.sign(release)
+    hub.send(release)
+    hub.send(status_update(ctx, {"template": "inspection_scheduled", "hour": 10}))
+    sends = [s for s in persisted(hub, "client.message.send")
+            if s["client_context_id"] == ctx]
+    assert any(s["payload"]["template"] == "inspection_scheduled" for s in sends), \
+        "scheduled touches must resume once the hold is released"
+
+
+# ------------------------- THE FIX: conflict-check scope (tuple 3)
+def test_conflicting_deadline_alerts_now_also_send_nothing(tmp_path):
+    """Was: the conflict-check only ran for status.update - deadline.alert
+    shared the same outer branch but had no equivalent check at all,
+    despite the tuple being written generically."""
+    hub = make_hub(str(tmp_path))
+    Spoke11ClientCommunication(hub)
+    hub.on_turn_start()
+    ctx = "c-022"
+    hub.send(deadline_alert(ctx, {"template": "inspection_deadline",
+                                  "conflict_key": "inspection",
+                                  "value": "2026-08-15", "hour": 10}, frm="07"))
+    hub.send(deadline_alert(ctx, {"template": "inspection_deadline",
+                                  "conflict_key": "inspection",
+                                  "value": "2026-08-20", "hour": 10}, frm="07"))
+    clar = persisted(hub, "clarification.request")
+    assert any("conflicting statuses" in c["payload"]["reason"] for c in clar)
+    sends = [s for s in persisted(hub, "client.message.send")
+            if s["client_context_id"] == ctx]
+    assert len(sends) == 1, "the second, conflicting alert must not also send"
 
 
 def test_wire_topic_in_client_message_escalates(tmp_path):

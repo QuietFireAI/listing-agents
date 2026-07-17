@@ -41,10 +41,31 @@ def _flatten_strings(obj):
 
 class Spoke11ClientCommunication:
     """DECISIONS.md tuples implemented directly:
-      1. reply mixes routine + advice -> answer neither, split and route both
+      1. reply mixes routine + advice -> answer neither, split and route
+         both. Soft finding, not resolved here: the "split" is a label
+         (split="routine_only") on the lead.reply sent to the owning
+         agent, not an actual text extraction - the full raw message
+         (including the advice portion) is what's forwarded. Real
+         sentence-splitting would be invented NLP logic this review
+         won't guess at; flagging rather than pretending it's done.
       2. client is angry -> acknowledge + escalation.complaint, no
-         defensiveness, no promises
-      3. two agents report conflicting statuses -> send nothing, clarification
+         defensiveness, no promises. CONFLICT WITH THE RATIFIED PLAYBOOK,
+         NOT RESOLVED HERE: checked playbooks/P14-complaint-response
+         directly - its HITL gates say "No agent replies publicly or
+         privately to the complaint - drafting is permitted, sending is
+         human-only." This tuple's own text says to send an
+         acknowledgment. These are in direct conflict for the same real
+         event. Did not silently pick a side - left the existing
+         acknowledgment send untouched, added P14's other requirement
+         (the outbound hold, step 2) since that part doesn't touch the
+         disputed question. Needs an owner decision: does the
+         acknowledgment stay, or does P14's human-only reply rule win?
+      3. two agents report conflicting statuses -> send nothing,
+         clarification. Fixed 2026-07-16: the conflict-detection logic
+         only ran for status.update - deadline.alert and
+         client.message.request shared the same outer branch but had no
+         equivalent check, despite the tuple being written generically
+         and covering any of the three update types this agent receives.
       4. urgent alert inside quiet hours -> send only if config marks that
          class exempt, otherwise wake human not client
       5. 'what would you do?' -> escalation.legal_line, verbatim
@@ -55,8 +76,13 @@ class Spoke11ClientCommunication:
          fabrication
       9. client references an off-log conversation -> acknowledge + ask
          for particulars, never pretend recall
-      10. negative-tone reply -> route P14 complaint intake, never freestyle
-          de-escalation
+      10. negative-tone reply -> route P14 complaint intake, never
+          freestyle de-escalation. Fixed 2026-07-16: this never actually
+          escalated via escalation.complaint at all - it only tagged a
+          lead.reply to the owning business agent, which has no
+          relationship to P14's real mechanism. Checked the playbook
+          directly (see tuple 2's note): step 1 is escalation.complaint
+          verbatim, step 2 is the outbound hold. Both now real.
       11. contact-channel change request -> honor immediately, record via
           14, confirm once
     """
@@ -71,6 +97,11 @@ class Spoke11ClientCommunication:
         self.pending_conflict: dict[str, list] = {}  # ctx -> conflicting statuses
         self.pending_showing_requests: dict[str, dict] = {}  # ctx -> held request
         self.awaiting_human_response: dict[str, bool] = {}  # ctx -> escalated, awaiting human
+        # P14 (Complaint Response playbook) step 2: "Outbound HOLD for that
+        # client context - no scheduled touches fire" once a complaint is
+        # open. Was missing entirely - neither tuple 2 (angry) nor tuple 10
+        # (negative tone) implemented this half of the playbook.
+        self.complaint_hold: set[str] = set()
         hub.register("11", self.handle)
 
     def _in_quiet_hours(self, hour: int) -> bool:
@@ -145,30 +176,52 @@ class Spoke11ClientCommunication:
                 self.hub.send(_env("11", "18", "agent.status", resolved_ctx,
                                    {"waiting_on": "human_advice_response",
                                     "resolved": True}))
+            resolved_complaint_ctx = payload.get("resolve_complaint_hold")
+            if resolved_complaint_ctx:
+                # P14: "hold released only on human direction"
+                self.complaint_hold.discard(resolved_complaint_ctx)
+                self.hub.send(_env("11", "14", "interaction.log",
+                                   resolved_complaint_ctx,
+                                   {"kind": "complaint_hold_released"}))
             return
 
         if env.intent in ("status.update", "deadline.alert", "client.message.request"):
             hour = payload.get("hour", 12)
             alert_class = payload.get("alert_class")
 
-            # tuple 3: conflicting statuses for the same milestone -> send
-            # nothing, clarification
+            # P14 step 2: outbound hold - no scheduled touches fire while a
+            # complaint is open for this context.
+            if ctx in self.complaint_hold:
+                self.hub.ingest_spoke_trace(
+                    "11", env.envelope_id,
+                    thought=f"ctx={ctx!r} has an open complaint hold (P14) - "
+                            f"no scheduled touches fire until the human "
+                            f"releases it",
+                    result="held: complaint_hold")
+                self.hub.send(_env("11", "14", "interaction.log", ctx,
+                                   {"kind": "touch_held_complaint_hold"}))
+                return
+
+            # tuple 3: two agents report conflicting statuses -> send
+            # nothing, clarification. Fixed 2026-07-16: this only ran for
+            # status.update - deadline.alert and client.message.request
+            # shared the same outer branch (any of the three can report on
+            # the same milestone from a different agent) but had no
+            # equivalent check at all.
             existing = self.pending_conflict.setdefault(ctx, [])
-            if env.intent == "status.update":
-                milestone = payload.get("milestone") or payload.get("status")
-                conflict_key = payload.get("conflict_key")
-                if conflict_key:
-                    prior = [s for s in existing if s.get("conflict_key") == conflict_key]
-                    if prior and prior[-1]["value"] != payload.get("value"):
-                        self.hub.send(_env("11", "queue", "clarification.request",
-                                           ctx, {"reason": "conflicting statuses "
-                                                           "for the same milestone "
-                                                           "- sending nothing"}))
-                        existing.append({"conflict_key": conflict_key,
-                                        "value": payload.get("value")})
-                        return
+            conflict_key = payload.get("conflict_key")
+            if conflict_key:
+                prior = [s for s in existing if s.get("conflict_key") == conflict_key]
+                if prior and prior[-1]["value"] != payload.get("value"):
+                    self.hub.send(_env("11", "queue", "clarification.request",
+                                       ctx, {"reason": "conflicting statuses "
+                                                       "for the same milestone "
+                                                       "- sending nothing"}))
                     existing.append({"conflict_key": conflict_key,
                                     "value": payload.get("value")})
+                    return
+                existing.append({"conflict_key": conflict_key,
+                                "value": payload.get("value")})
 
             template = payload.get("template", env.intent)
             variables = payload.get("variables", {k: v for k, v in payload.items()
@@ -233,6 +286,7 @@ class Spoke11ClientCommunication:
 
             # tuple 2: angry client -> acknowledge + complaint escalation
             if payload.get("angry"):
+                self.complaint_hold.add(ctx)  # P14 step 2: outbound hold
                 self.hub.escalate("escalation.complaint",
                                   {"client_context_id": ctx,
                                    "trigger": "angry client contact",
@@ -242,8 +296,20 @@ class Spoke11ClientCommunication:
                 return
 
             # tuple 10: negative tone -> route P14 complaint intake, never
-            # freestyle de-escalation
+            # freestyle de-escalation. Fixed 2026-07-16: this never actually
+            # escalated via the real escalation.complaint queue at all -
+            # it only tagged a lead.reply and sent it to the owning
+            # BUSINESS agent (e.g. 13), which has no relationship to P14's
+            # actual mechanism (verbatim to the priority queue + outbound
+            # hold, human owns the entire response). Checked the ratified
+            # playbook directly rather than guess: P14 step 1 is
+            # escalation.complaint, step 2 is the hold - both now real.
             if payload.get("negative_tone"):
+                self.complaint_hold.add(ctx)
+                self.hub.escalate("escalation.complaint",
+                                  {"client_context_id": ctx,
+                                   "trigger": "negative-tone reply",
+                                   "verbatim": message})
                 self.hub.send(_env("11", payload.get("owning_agent", "13"),
                                    "lead.reply", ctx,
                                    {"message": message, "route": "P14_complaint_intake"}))
@@ -312,6 +378,10 @@ class Spoke11ClientCommunication:
             return
 
         if env.intent == "data.package":
+            if ctx in self.complaint_hold:
+                self.hub.send(_env("11", "14", "interaction.log", ctx,
+                                   {"kind": "touch_held_complaint_hold"}))
+                return
             # market update package arrived for a client send - delivered
             # as sourced figures, never characterized (job component: route
             # neighborhood questions to 10's sourced packages, report facts
