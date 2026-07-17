@@ -54,6 +54,8 @@ Dispatcher returns an `ack`.
 | IN | ← 06 / 07 / 09 | Events and deadline blocks | `calendar.event` / `deadline.alert` |
 | OUT | → human | Briefings and summaries | `report.package` |
 | OUT | → 14 CRM & Pipeline | Schedule logs | `interaction.log` |
+| IN | ← every agent with a wait state | Wait-state signal, started or cleared | `agent.status` |
+| OUT | → 06 Showing Scheduler | No-show detected by calendar (missed slot, no confirmation) | `showing.no_show` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

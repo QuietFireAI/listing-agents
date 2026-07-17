@@ -65,6 +65,7 @@ Dispatcher returns an `ack`.
 | IN | ← 14 CRM & Pipeline | Record match / no-match | `record.response` (`in_reply_to`) |
 | IN | ← 20 Social Media Monitoring | Social lead signals | `lead.signal` |
 | IN | ← external (call/web-form/text channel systems) | Direct inbound contact | `lead.inbound` |
+| OUT | → 18 Calendar & Task | Wait-state signal (dedupe pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

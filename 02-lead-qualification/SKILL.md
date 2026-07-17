@@ -59,6 +59,7 @@ Dispatcher returns an `ack`.
 | OUT | → HITL queue | Hot lead | `escalation.hot_lead` |
 | OUT | → 03 Lead Nurture | Warm / long-cycle lead | `lead.nurture` |
 | OUT | → 14 CRM & Pipeline | Tier assignment and archive events | `interaction.log` |
+| OUT | → 18 Calendar & Task | Wait-state signal (hot-lead escalation open) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

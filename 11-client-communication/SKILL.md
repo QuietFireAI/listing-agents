@@ -65,6 +65,14 @@ Dispatcher returns an `ack`.
 | OUT | → 06 Showing Scheduler | Client-requested showings | `showing.request` |
 | OUT | → HITL queue | Advice-seeking or complaints | `escalation.legal_line` |
 | OUT | → 14 CRM & Pipeline | Every touch | `interaction.log` |
+| IN | ← external (client reply channels) | Inbound client reply | `client.reply` |
+| OUT | → 06 Showing Scheduler | Post-showing feedback relayed | `showing.feedback_response` |
+| OUT | → 06 Showing Scheduler | No-show reported | `showing.no_show` |
+| OUT | → 08 Document Collection | Party-submitted document, party-level identity | `document.submission` |
+| OUT | → 03 / 04 / 12 / 13 / 16 / 20 | Reply routed to owning agent by content | `lead.reply` |
+| OUT | → 14 CRM & Pipeline | Dedupe / context check | `record.request` |
+| IN | ← 14 CRM & Pipeline | Record match / no-match | `record.response` (`in_reply_to`) |
+| OUT | → 18 Calendar & Task | Wait-state signal (advice-response pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

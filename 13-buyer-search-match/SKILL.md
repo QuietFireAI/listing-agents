@@ -68,6 +68,8 @@ Dispatcher returns an `ack`.
 | OUT | → 14 CRM & Pipeline | Buyer-agreement verification | `record.request` |
 | IN | ← 14 CRM & Pipeline | Agreement status | `record.response` (`in_reply_to`) |
 | OUT | → 14 CRM & Pipeline | Match and reaction logs | `interaction.log` |
+| IN | ← 11 Client Communication | Buyer reply relayed for handling | `lead.reply` |
+| OUT | → 18 Calendar & Task | Wait-state signal (buyer-agreement verification pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

@@ -57,6 +57,8 @@ Dispatcher returns an `ack`.
 | OUT | → 05 / 08 | Deliverables | `deliverable.release` |
 | OUT | → 18 Calendar & Task | Appointments | `calendar.event` |
 | OUT | → HITL queue | Term negotiation requests | `escalation.legal_line` |
+| IN | ← external vendor systems | Vendor-side event (cancellation, rate change, deliverable, invoice, no-show, scope change) | `vendor.event` |
+| OUT | → 18 Calendar & Task | Wait-state signal (vendor confirmation pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

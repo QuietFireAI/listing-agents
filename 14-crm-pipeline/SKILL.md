@@ -58,8 +58,8 @@ Dispatcher returns an `ack`.
 | IN | ← all agents | Interaction logs | `interaction.log` |
 | OUT | → 16 After-Close & Referral | Date triggers per supplied list | `date.trigger` |
 | OUT | → human / requesting agent | Pipeline reports | `report.package` |
-| OUT | → 01 / 13 via 00 | Record query responses | `record.response` |
-| IN | ← 01 / 13 / 15 via 00 | Record queries | `record.request` |
+| OUT | → 01 / 11 / 13 / 15 via 00 | Record query responses | `record.response` |
+| IN | ← 01 / 11 / 13 / 15 via 00 | Record queries | `record.request` |
 | IN | ← 07 via 00 | Transaction closed - context to past-client | `transaction.closed` |
 | IN | ← 05 via 00 | Listing status changes | `status.update` |
 

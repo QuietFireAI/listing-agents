@@ -61,6 +61,11 @@ Dispatcher returns an `ack`.
 | OUT | → 09 Vendor Coordination | Event vendor needs | `vendor.request` |
 | OUT | → 14 CRM & Pipeline | Feedback and RSVP logs | `interaction.log` |
 | OUT | → HITL queue | Access authorization requests | `escalation.legal_line` |
+| OUT | → 05 MLS & Listing Mgmt | Status check before scheduling | `status.request` |
+| IN | ← 05 MLS & Listing Mgmt | Current listing status | `status.response` |
+| IN | ← 11 Client Communication | Post-showing feedback relayed | `showing.feedback_response` |
+| IN | ← 11 Client Communication / 18 Calendar & Task | No-show reported | `showing.no_show` |
+| OUT | → 18 Calendar & Task | Wait-state signal (feedback pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

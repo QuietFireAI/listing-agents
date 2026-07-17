@@ -58,6 +58,8 @@ Dispatcher returns an `ack`.
 | IN | ← 17 Compliance | Verdict | `content.verdict` |
 | OUT | → 12 Marketing Campaign | Approved assets for distribution | `asset.release` |
 | OUT | → 05 MLS & Listing Mgmt | Approved MLS description | `asset.release` |
+| IN | ← 11 Client Communication | Prospect reply relayed for handling | `lead.reply` |
+| OUT | → 18 Calendar & Task | Wait-state signal (compliance review pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

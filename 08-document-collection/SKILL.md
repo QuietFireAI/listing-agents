@@ -57,6 +57,8 @@ Dispatcher returns an `ack`.
 | OUT | → 11 Client Communication | Chase messages to parties | `client.message.request` |
 | OUT | → 07 Transaction Coordinator | Status: received / missing / rejected | `doc.status` |
 | OUT | → 14 CRM & Pipeline | Filing log | `interaction.log` |
+| IN | ← 11 Client Communication | Party-submitted document, party-level identity | `document.submission` |
+| OUT | → 18 Calendar & Task | Wait-state signal (chase timeout pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

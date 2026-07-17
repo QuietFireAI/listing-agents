@@ -63,6 +63,8 @@ Dispatcher returns an `ack`.
 | OUT | → 16 / 14 / 15 via 00 | Closing executed | `transaction.closed` |
 | OUT | → HITL queue | Missed or at-risk deadline, contract questions | `escalation.legal_line` |
 | OUT | → 14 CRM & Pipeline | Milestone log | `interaction.log` |
+| IN | ← 09 Vendor Coordination | Inspection/appraisal deliverable, direct | `deliverable.release` |
+| OUT | → 18 Calendar & Task | Wait-state signal (vendor deliverable pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

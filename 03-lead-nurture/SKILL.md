@@ -63,6 +63,10 @@ Dispatcher returns an `ack`.
 | OUT | → 10 Market Data | Data for market-update content | `data.request` |
 | IN | ← 10 Market Data | Requested packages | `data.package` (`in_reply_to`) |
 | OUT | → HITL queue | Legal Line trigger | `escalation.legal_line` |
+| OUT | → 11 Client Communication | Reply requiring human-gated response | `client.message.request` |
+| IN | ← 11 Client Communication | Prospect reply relayed for handling | `lead.reply` |
+| IN | ← 12 Marketing Campaign / 20 Social Media Monitoring | Engagement/behavioral signal | `behavioral.signal` |
+| OUT | → 18 Calendar & Task | Wait-state signal (compliance review pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

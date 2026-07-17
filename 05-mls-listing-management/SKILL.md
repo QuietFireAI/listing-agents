@@ -60,6 +60,9 @@ Dispatcher returns an `ack`.
 | OUT | → 04 / 10 / 13 | Listing data packages | `listing.data` |
 | OUT | → 09 Vendor Coordination | Photo order | `vendor.request` |
 | OUT | → 11 / 12 / 14 | Status change and MLS-entry confirmations | `status.update` |
+| IN | ← 06 Showing Scheduler | Status check before scheduling | `status.request` |
+| OUT | → 06 Showing Scheduler | Current listing status | `status.response` |
+| OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

@@ -63,6 +63,10 @@ Dispatcher returns an `ack`.
 | OUT | → 11 Client Communication | All client-facing touches | `client.message.request` |
 | OUT | → 02 Lead Qualification | Past client signals new transaction intent | `lead.captured` |
 | OUT | → 14 CRM & Pipeline | Touch and referral logs | `interaction.log` |
+| OUT | → 17 Compliance | Referral/anniversary content, pre-send | `content.review` |
+| IN | ← 17 Compliance | Verdict on content | `content.verdict` |
+| IN | ← 11 Client Communication | Past-client reply relayed for handling | `lead.reply` |
+| OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

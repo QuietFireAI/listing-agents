@@ -59,6 +59,7 @@ Dispatcher returns an `ack`.
 | IN | ← 05 MLS & Listing Mgmt | Listing data feeds | `listing.data` |
 | OUT | → requester via 00 | Comp or neighborhood package | `data.package` |
 | OUT | → 14 CRM & Pipeline | Package delivery log | `interaction.log` |
+| OUT | → 17 Compliance | Data-derived compliance concern (e.g. steering-adjacent pattern) | `compliance.notice` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

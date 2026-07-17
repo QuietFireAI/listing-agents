@@ -61,6 +61,10 @@ Dispatcher returns an `ack`.
 | IN | ← 17 Compliance | Verdict | `content.verdict` |
 | OUT | → platforms via approved channels | Scheduled publications | `campaign.publish` |
 | OUT | → 14 CRM & Pipeline | Engagement reports | `interaction.log` |
+| OUT | → 03 Lead Nurture | Engagement/behavioral signal | `behavioral.signal` |
+| IN | ← external ad/social platforms | Platform performance metrics | `platform.metrics` |
+| IN | ← 11 Client Communication | Past reply relayed for handling | `lead.reply` |
+| OUT | → 18 Calendar & Task | Wait-state signal (CCP compliance gate pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

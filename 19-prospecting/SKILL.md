@@ -65,6 +65,8 @@ Dispatcher returns an `ack`.
 | OUT | → 10 Market Data | Market context for opportunity records | `data.request` |
 | IN | ← 10 Market Data | Requested packages | `data.package` (`in_reply_to`) |
 | OUT | → 14 CRM & Pipeline | Discovery log | `interaction.log` |
+| IN | ← external prospecting sources | Raw discovery feed | `discovery.feed` |
+| OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask

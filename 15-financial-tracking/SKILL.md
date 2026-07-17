@@ -58,6 +58,8 @@ Dispatcher returns an `ack`.
 | OUT | → 14 CRM & Pipeline | Record queries | `record.request` |
 | OUT | → human only via 00 | P&L, ROI, commission reports | `report.package` |
 | OUT | → HITL queue | Commission language questions | `escalation.legal_line` |
+| IN | ← 14 CRM & Pipeline | Record query response | `record.response` (`in_reply_to`) |
+| OUT | → 18 Calendar & Task | Wait-state signal | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
 communication path, that is an ambiguity condition (section 6) - stop and ask
