@@ -528,3 +528,114 @@ def test_generate_report_traces_to_stored_records_only(tmp_path):
     assert report["total_interactions"] > 0
     rp = persisted(hub, "report.package")
     assert rp and rp[0]["to_agent"] == "human"
+
+
+# ------------------------------- THE FIX: tuples 1 & 8, conflict flagging
+def test_conflicting_status_update_values_flagged_not_silently_overwritten(tmp_path):
+    """Was: zero implementing code for either tuple - 'both stand' was
+    trivially true (append-only never overwrites) but nothing was ever
+    actually flagged when a new fact disagreed with a prior one."""
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    hub.on_turn_start()
+    ctx = "lead-030"
+
+    first = Envelope(from_agent="05", to_agent="14", intent="status.update",
+                    client_context_id=ctx, payload={"status": "active"},
+                    provenance={"source": "spoke-05", "captured_at": "runtime",
+                                "verbatim_available": True})
+    hub.send(first)
+    second = Envelope(from_agent="05", to_agent="14", intent="status.update",
+                     client_context_id=ctx, payload={"status": "under_contract"},
+                     provenance={"source": "spoke-05", "captured_at": "runtime",
+                                 "verbatim_available": True})
+    hub.send(second)
+
+    entries = crm.records[ctx]
+    assert len(entries) == 2
+    assert "conflicts_with_prior" in entries[1], \
+        "a disagreeing status.update must be flagged against the prior one, not silently accepted"
+    assert entries[1]["conflicts_with_prior"]["status"]["prior"] == "active"
+    assert entries[1]["conflicts_with_prior"]["status"]["new"] == "under_contract"
+    # both stand - never merged or overwritten
+    assert entries[0]["payload"]["status"] == "active"
+    assert entries[1]["payload"]["status"] == "under_contract"
+
+
+def test_agreeing_status_updates_never_flagged_as_conflicts(tmp_path):
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    hub.on_turn_start()
+    ctx = "lead-031"
+    for _ in range(2):
+        env = Envelope(from_agent="05", to_agent="14", intent="status.update",
+                      client_context_id=ctx, payload={"status": "active"},
+                      provenance={"source": "spoke-05", "captured_at": "runtime",
+                                  "verbatim_available": True})
+        hub.send(env)
+    entries = crm.records[ctx]
+    assert "conflicts_with_prior" not in entries[1]
+
+
+# ---------------------------------------- THE FIX: tuple 3, logging gap
+def test_generate_report_names_a_context_with_side_state_but_no_log_entry(tmp_path):
+    """Was: zero gap-detection logic - the report just presented whatever
+    existed as if it were complete."""
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    hub.on_turn_start()
+    # side-channel state set directly, bypassing _append entirely - the
+    # exact scenario the gap-detection needs to catch
+    crm.consent["lead-032"] = {"call": "yes"}
+
+    report = crm.generate_report()
+    assert "lead-032" in report["logging_gaps"], \
+        "a context with side-state but no backing log entry must be named as a gap"
+
+
+def test_generate_report_no_gaps_when_everything_is_logged(tmp_path):
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+    hub.send(signal("lead-033", {"channel": "call", "name": "Clean Record",
+                                 "consent": {"call": "yes"}}))
+    report = crm.generate_report()
+    assert "lead-033" not in report["logging_gaps"]
+
+
+# --------------------------------------- THE FIX: tuple 6, merge candidates
+def test_merge_candidates_proposed_never_auto_merged(tmp_path):
+    """Was: zero detection logic, and the underlying data (contact info)
+    wasn't even being sent to 14 by Agent 01 until that was fixed too."""
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    hub.send(signal("lead-034", {"channel": "call", "name": "Same Person A",
+                                 "phone": "555-1234", "consent": {"call": "yes"}}))
+    hub.send(signal("lead-035", {"channel": "web_form", "name": "Same Person B",
+                                 "phone": "555-1234", "consent": {"call": "yes"}}))
+
+    proposals = crm.check_merge_candidates()
+    assert proposals and set(proposals[0]["contexts"]) == {"lead-034", "lead-035"}
+    assert "555-1234" in proposals[0]["evidence"]
+    clar = persisted(hub, "clarification.request")
+    assert any("merge candidate" in c["payload"].get("reason", "") for c in clar)
+    # never auto-merge: both contexts remain fully independent records
+    assert "lead-034" in crm.records and "lead-035" in crm.records
+    assert crm.records["lead-034"] is not crm.records["lead-035"]
+
+
+def test_no_merge_candidates_when_contacts_genuinely_differ(tmp_path):
+    hub = make_hub(str(tmp_path))
+    crm = Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+    hub.send(signal("lead-036", {"channel": "call", "name": "Person A",
+                                 "phone": "555-1111", "consent": {"call": "yes"}}))
+    hub.send(signal("lead-037", {"channel": "call", "name": "Person B",
+                                 "phone": "555-2222", "consent": {"call": "yes"}}))
+    proposals = crm.check_merge_candidates()
+    assert proposals == []

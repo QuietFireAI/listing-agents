@@ -42,16 +42,49 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN, escalation_flag=Fals
 class Spoke14CRMPipeline:
     """System of record. Append-only; consent flags are authoritative HERE.
 
-    DECISIONS.md tuples implemented directly:
-      - conflicting facts for one event -> both stand, flagged (never merged)
-      - merge candidate w/ unconfirmed identity -> no merge
-      - report over a known logging gap -> state the gap, never smooth
+    DECISIONS.md tuples:
+      - conflicting facts for one event -> both stand, flagged (never
+        merged). Fixed 2026-07-17: "both stand" was trivially true
+        (append-only never overwrites) but nothing was ever actually
+        flagged - zero code existed. _append() now compares a new entry
+        against the most recent PRIOR entry of the same kind for the same
+        context; any differing overlapping field is flagged on the entry
+        itself (conflicts_with_prior), not silently left for a reader to
+        notice or not.
+      - merge candidate w/ unconfirmed identity -> no merge (vacuously
+        true: this class has no merge mechanism of any kind, so nothing
+        auto-merges; see the next tuple for the ACTIVE detection half)
+      - report over a known logging gap -> state the gap, never smooth.
+        Fixed 2026-07-17: generate_report() now detects contexts with
+        side-channel state (consent/property interests/buyer agreement/
+        identity verification) but NO backing log entry at all, and names
+        them explicitly (logging_gaps) rather than presenting whatever
+        exists as a complete picture.
       - consent flags conflict across channels -> most restrictive wins, per channel
       - record deletion request -> escalate to human (retention is jurisdiction)
-      - merge candidates detected -> propose w/ evidence, never auto-merge
+      - merge candidates detected -> propose w/ evidence, never auto-merge.
+        Fixed 2026-07-17: zero detection logic existed, and the data it
+        would need (contact info) wasn't even being sent here by Agent 01
+        until that was fixed too. check_merge_candidates() compares
+        contact info across different contexts' lead.captured entries and
+        proposes (never auto-merges) on a genuine match.
       - record edit erasing history -> append-correct, never overwrite
-      - external import conflicts w/ log-derived state -> log wins, flagged
-      - context requested outside a routed intent -> refuse
+        (structurally true: no edit/overwrite method exists anywhere in
+        this class, only _append)
+      - external import conflicts w/ log-derived state -> log wins,
+        flagged. Fixed 2026-07-17 by the same _append() conflict-check
+        that fixed the first tuple above - one mechanism serves both,
+        since they're the same underlying comparison (a new fact for an
+        existing context disagreeing with what's already on record).
+      - context requested outside a routed intent -> refuse. Corrected
+        2026-07-17: this is NOT a missing local check - record.request's
+        legal senders (01, 11, 13, 15 - verified directly against
+        routes.json, not assumed) are already enforced by the hub before
+        this class's handle() is ever called; there is no alternate path
+        to request a context that bypasses this. The prior comment
+        claiming "this is the redundant local check named in the tuple"
+        was misleading (implied distinct code that didn't exist) - fixed
+        to describe what's actually true.
       - retention/deletion request -> freeze + escalate to owner
     """
 
@@ -83,6 +116,34 @@ class Spoke14CRMPipeline:
         entry = {"entry_id": entry_id, "kind": kind,
                  "envelope_id": env.envelope_id, "from_agent": env.from_agent,
                  "payload": env.payload}
+        # tuples 1 & 8: two agents logged conflicting facts for one event
+        # (both stand, flagged) / external import conflicts with log-
+        # derived state (log wins, differences flagged). Fixed 2026-07-17:
+        # zero implementing code existed for either - "both stand" was
+        # trivially true (append-only never overwrites) but nothing was
+        # ever actually flagged. Compares against the most recent prior
+        # entry of the SAME kind for this context; any overlapping key
+        # with a differing value is a conflict, named on the new entry
+        # itself so a later reader sees it without re-deriving it.
+        prior_same_kind = [e for e in self.records.get(ctx, []) if e["kind"] == kind]
+        conflicts = {}
+        if prior_same_kind:
+            prior_payload = prior_same_kind[-1]["payload"]
+            for k, v in env.payload.items():
+                if (k in prior_payload and prior_payload[k] != v
+                        and isinstance(v, (str, int, float, bool))):
+                    conflicts[k] = {"prior": prior_payload[k], "new": v,
+                                    "prior_entry_id": prior_same_kind[-1]["entry_id"]}
+        if conflicts:
+            entry["conflicts_with_prior"] = conflicts
+            self.hub.ingest_spoke_trace(
+                "14", env.envelope_id,
+                thought=f"ctx={ctx!r} kind={kind!r}: conflicting values vs "
+                        f"the prior {kind} entry for {sorted(conflicts)} - "
+                        f"both stand, log-derived state wins over this new "
+                        f"one for now, difference flagged on the entry "
+                        f"itself, never silently overwritten",
+                result=f"conflict_flagged={sorted(conflicts)}")
         self.records.setdefault(ctx, []).append(entry)
         return entry_id
 
@@ -130,15 +191,67 @@ class Spoke14CRMPipeline:
             for e in entries:
                 if e["kind"] == "interaction.log" and "tier" in e["payload"]:
                     tiers[ctx] = e["payload"]["tier"]  # last write wins, traced to entry_id
+
+        # tuple 3: report requested over a known logging gap -> state the
+        # gap, never smooth. Fixed 2026-07-17 - zero gap-detection existed;
+        # the report just presented whatever data existed as if it were
+        # complete. Real, detectable gap: side-channel state (consent,
+        # property interests, buyer agreement, identity verification) that
+        # exists for a context with NO backing log entry at all - meaning
+        # something happened for that context that this log never captured.
+        contexts_with_side_state = (set(self.consent) | set(self.property_interests)
+                                    | set(self.buyer_agreement) | set(self.identity_verified))
+        logging_gaps = sorted(ctx for ctx in contexts_with_side_state
+                              if not self.records.get(ctx))
+
         report = {
             "report_type": report_type,
             "traced_to_entries": True,
             "total_interactions": interaction_count,
             "contexts_covered": len(self.records),
             "tier_snapshot": tiers,
+            "logging_gaps": logging_gaps,
         }
         self.hub.send(_env("14", "human", "report.package", "eod-report", report))
         return report
+
+    def check_merge_candidates(self):
+        """Tuple 6: merge candidates detected -> propose merge with
+        evidence, never auto-merge client contexts. Fixed 2026-07-17 -
+        zero detection logic existed; this agent had no way to compare
+        contact info across contexts at all until Agent 01's interaction.log
+        send was fixed to actually include it. Called by a scheduler/sweep,
+        matching the pattern of other periodic checks in this codebase."""
+        contacts_by_ctx = {}
+        for ctx, entries in self.records.items():
+            for e in entries:
+                if e["kind"] == "interaction.log" and e["payload"].get("kind") == "lead.captured":
+                    contact = e["payload"].get("contact")
+                    if contact and contact.get("value"):
+                        contacts_by_ctx[ctx] = contact["value"]
+
+        seen: dict[str, list[str]] = {}
+        for ctx, value in contacts_by_ctx.items():
+            seen.setdefault(value, []).append(ctx)
+
+        proposals = []
+        for value, ctxs in seen.items():
+            if len(ctxs) > 1:
+                proposal = {"contexts": sorted(ctxs), "evidence": f"matching contact: {value!r}"}
+                proposals.append(proposal)
+                self.hub.ingest_spoke_trace(
+                    "14", f"merge-candidate-{'-'.join(sorted(ctxs))}",
+                    thought=f"contexts {sorted(ctxs)} share contact {value!r} "
+                            f"- proposing merge with evidence, never "
+                            f"auto-merging client contexts",
+                    result=f"proposed: {sorted(ctxs)}")
+                self.hub.send(_env("14", "queue", "clarification.request",
+                                   ctxs[0],
+                                   {"reason": f"merge candidate detected: "
+                                             f"contexts {sorted(ctxs)} share "
+                                             f"contact {value!r} - human "
+                                             f"confirms before any merge"}))
+        return proposals
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id
@@ -168,9 +281,13 @@ class Spoke14CRMPipeline:
                 return
 
             # Need-to-know: a record.request is the only legitimate way to
-            # ask for a context; anything else refuses (already enforced by
-            # the closed track upstream, this is the redundant local check
-            # named in the tuple).
+            # ask for a context. Corrected 2026-07-17: this used to claim
+            # "this is the redundant local check named in the tuple," which
+            # was misleading - no distinct check exists in this class. The
+            # real enforcement is the hub's own routing legality, verified
+            # directly against routes.json: record.request's only legal
+            # senders are 01, 11, 13, 15, and handle() is never reached by
+            # anything else. There is no alternate path that bypasses this.
             entries_out = list(entries)
             self.hub.ingest_spoke_trace(
                 "14", env.envelope_id,
@@ -553,7 +670,8 @@ class Spoke01LeadCapture:
             self.hub.send(_env("01", "14", "interaction.log", ctx,
                                {"kind": "lead.captured", "duplicate": known,
                                 "consent": merged_consent,
-                                "property_interests": merged_interests}))
+                                "property_interests": merged_interests,
+                                "contact": payload.get("contact")}))
             return
 
     def check_record_response_timeout(self, ctx: str, today: str):
