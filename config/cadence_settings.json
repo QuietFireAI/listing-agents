@@ -62,6 +62,24 @@
    "purpose": "After-close relationship check-in points (Agent 16)",
    "schedule": "30 / 90 / 365 days post-close, checked via check_post_close_milestones",
    "ceiling": "n/a - fixed touch points, not a repeating cadence"
+  },
+  {
+   "cadence_id": "no_show_pattern",
+   "purpose": "No-shows from the same showing agent, pattern detection (Agent 06)",
+   "schedule": "counted per showing_agent as showing.no_show events arrive",
+   "ceiling": "2 no-shows, then flag the pattern (no_show_pattern_threshold)"
+  },
+  {
+   "cadence_id": "pricing_opinion_press",
+   "purpose": "Repeated pricing-opinion asks before escalating past a refusal (Agent 10)",
+   "schedule": "counted per requester as data.request asks arrive",
+   "ceiling": "2 asks, then escalate - 1st ask is refuse only (opinion_press_threshold)"
+  },
+  {
+   "cadence_id": "near_miss_pattern",
+   "purpose": "Flagged compliance verdicts from the same submitting agent, pattern detection (Agent 17)",
+   "schedule": "counted per submitting_agent as flagged verdicts occur, reset after each report",
+   "ceiling": "3 flagged verdicts, then a pattern report to the owner (near_miss_pattern_threshold)"
   }
  ]
 }

@@ -57,6 +57,60 @@ def test_timeline_init_requests_docs_and_vendors(tmp_path):
     assert {v["payload"]["milestone"] for v in vendors} == {"inspection", "appraisal"}
 
 
+# --------------------------- THE FIX: transaction_milestone_config wired
+def test_TUNABLE_transaction_milestone_config_actually_governs_behavior(tmp_path):
+    """Was: doc_milestones and vendor_milestones were hardcoded literals
+    inside the method body - no way to change which milestones need a
+    document or vendor without editing source. Now a real constructor
+    parameter; a custom milestone not in the old hardcoded set must
+    still trigger correctly."""
+    hub, signer = make_hub(str(tmp_path))
+    custom_config = {
+        "survey": {"needs_document": True, "vendor_kind": "surveyor"},
+        "closing": {"needs_document": False, "vendor_kind": None},
+    }
+    spoke = Spoke07TransactionCoordinator(hub, transaction_milestone_config=custom_config)
+    hub.on_turn_start()
+    hub.send(config_update(signer, "t-030", {"timeline_init": {
+        "survey": "2026-08-10", "closing": "2026-09-01"}}))
+    docs = persisted(hub, "doc.request")
+    assert {d["payload"]["milestone"] for d in docs} == {"survey"}, \
+        "the custom config must govern which milestones request documents, not the old hardcoded set"
+    vendors = persisted(hub, "vendor.request")
+    assert {v["payload"]["milestone"] for v in vendors} == {"survey"}
+    assert vendors[0]["payload"]["kind"] == "surveyor"
+
+
+def test_kind_to_milestone_genuinely_derives_from_the_same_config(tmp_path):
+    """Was: kind_to_milestone was an independent hardcoded dict inside the
+    vendor.cancellation_notice handler - a second copy of the same fact
+    that could silently drift from vendor_milestones. Now it's a real
+    reverse-derivation off the single config, proven here with a config
+    that doesn't match the old hardcoded values at all."""
+    hub, signer = make_hub(str(tmp_path))
+    custom_config = {
+        "survey": {"needs_document": True, "vendor_kind": "surveyor"},
+    }
+    spoke = Spoke07TransactionCoordinator(hub, transaction_milestone_config=custom_config)
+    hub.on_turn_start()
+    hub.send(config_update(signer, "t-031", {"timeline_init": {"survey": "2026-08-10"}}))
+
+    cancellation = Envelope(from_agent="09", to_agent="07",
+                           intent="vendor.cancellation_notice",
+                           client_context_id="t-031",
+                           payload={"vendor_kind": "surveyor"},
+                           provenance={"source": "spoke-09", "captured_at": "runtime",
+                                       "verbatim_available": True})
+    hub.send(cancellation)
+    escalations = list(hub.queues["escalation.legal_line"])
+    at_risk = [e for e in escalations if e["client_context_id"] == "t-031"]
+    assert at_risk and "survey" in at_risk[0]["trigger"], \
+        "kind_to_milestone must resolve 'surveyor' -> 'survey' from the custom config, not a hardcoded inspector/appraiser-only mapping"
+    # confirm the OLD hardcoded values genuinely don't leak through
+    assert spoke.kind_to_milestone("inspector") is None
+    assert spoke.kind_to_milestone("appraiser") is None
+
+
 def test_wire_topic_full_stops_regardless_of_intent(tmp_path):
     hub, signer = make_hub(str(tmp_path))
     Spoke07TransactionCoordinator(hub)

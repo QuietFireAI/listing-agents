@@ -49,13 +49,53 @@ class Spoke07TransactionCoordinator:
           money milestones never get benefit of the doubt
       12. possession terms ambiguous -> clarification with exact clause
           quoted, never interpolate intent
+
+    Wired for real 2026-07-17 (owner decision, not left as documentation-
+    only): transaction milestone data (which milestones need a document
+    request, which need vendor scheduling and what kind) used to be two
+    independent hardcoded structures here plus a THIRD independent
+    hardcoded reverse-mapping in the vendor.cancellation_notice handler -
+    three copies of overlapping facts that could silently drift from each
+    other. Now one constructor parameter (transaction_milestone_config),
+    genuinely single-sourced; kind_to_milestone() derives the reverse
+    mapping from it rather than duplicating it. Default reproduces the
+    prior hardcoded values exactly - every existing test passes
+    unmodified. Deliberately NOT covered: the per-milestone business logic
+    in doc.status handling (inspection/appraisal/title/earnest_money/
+    closing) and the financing_contingency deadline-alert case - those are
+    genuinely distinct logic per milestone, not lookup data, and making
+    them "configurable" would mean inventing a rules engine and guessing
+    at business logic that isn't this review's to invent.
     """
 
     # TUNABLE (owner-ratified 2026-07-16): vendor_holdup_days=7.
-    # See docs/TUNING_MANUAL.md to change.
-    def __init__(self, hub, vendor_holdup_days: int = 7):
+    # TUNABLE (owner-ratified 2026-07-17): transaction_milestone_config -
+    # was two independent hardcoded structures (doc_milestones,
+    # vendor_milestones) plus a THIRD independent hardcoded reverse-mapping
+    # in Agent 09's cancellation handler (kind_to_milestone) that could
+    # drift from either. Now one source of truth, constructor-injected;
+    # default reproduces the exact prior hardcoded behavior byte-for-byte.
+    # Does NOT cover the per-milestone business logic in doc.status
+    # handling (inspection/appraisal/title/earnest_money/closing) or the
+    # financing_contingency deadline-alert special case - those are
+    # genuinely distinct logic per milestone, not lookup data, and stay
+    # in Python. See docs/TUNING_MANUAL.md to change.
+    _DEFAULT_TRANSACTION_MILESTONES = {
+        "inspection": {"needs_document": True, "vendor_kind": "inspector"},
+        "appraisal": {"needs_document": True, "vendor_kind": "appraiser"},
+        "title": {"needs_document": True, "vendor_kind": None},
+        "hoa_docs": {"needs_document": True, "vendor_kind": None},
+        "financing_contingency": {"needs_document": True, "vendor_kind": None},
+        "earnest_money": {"needs_document": False, "vendor_kind": None},
+        "closing": {"needs_document": False, "vendor_kind": None},
+    }
+
+    def __init__(self, hub, vendor_holdup_days: int = 7,
+                 transaction_milestone_config: dict[str, dict] | None = None):
         self.hub = hub
         self.vendor_holdup_days = vendor_holdup_days
+        self.transaction_milestone_config = (transaction_milestone_config or
+                                             self._DEFAULT_TRANSACTION_MILESTONES)
         self.timelines: dict[str, dict] = {}  # ctx -> {milestone: {deadline, satisfied, artifact}}
         self.offer_status: dict[str, dict] = {}  # ctx -> {stage, response_deadline}
         # tracks outstanding vendor.request per (ctx, milestone) -> date sent,
@@ -65,6 +105,14 @@ class Spoke07TransactionCoordinator:
         # timer to HITL, independent of and faster than deadline expiry.
         self.vendor_requests_pending: dict[str, dict[str, str]] = {}
         hub.register("07", self.handle)
+
+    def kind_to_milestone(self, vendor_kind: str) -> str | None:
+        """Reverse lookup, genuinely derived from transaction_milestone_config
+        (not an independent hardcoded copy - this is what used to drift)."""
+        for m, cfg in self.transaction_milestone_config.items():
+            if cfg.get("vendor_kind") == vendor_kind:
+                return m
+        return None
 
     def _wire_check(self, payload: dict, ctx: str) -> bool:
         def flatten_strings(obj):
@@ -103,13 +151,13 @@ class Spoke07TransactionCoordinator:
             # the 7-day holdup timer, which is built for silence/non-
             # response, the wrong mechanism for a definitive cancellation.
             # Map the vendor kind back to the actual milestone it was
-            # scheduled for, using the same mapping this agent already
-            # uses to order inspector/appraiser vendors, so the alert
-            # names the real at-risk deadline instead of a bare vendor
-            # kind with no timeline context.
-            kind_to_milestone = {"inspector": "inspection", "appraiser": "appraisal"}
+            # scheduled for, genuinely derived from the same
+            # transaction_milestone_config used to order inspector/
+            # appraiser vendors (self.kind_to_milestone()) - not an
+            # independent hardcoded copy that could drift from it, which
+            # is what this was before 2026-07-17.
             vendor_kind = payload.get("vendor_kind")
-            milestone = kind_to_milestone.get(vendor_kind)
+            milestone = self.kind_to_milestone(vendor_kind)
             deadline = (self.timelines.get(ctx, {}).get(milestone, {}).get("deadline")
                        if milestone else None)
             self.hub.escalate("escalation.legal_line",
@@ -151,18 +199,16 @@ class Spoke07TransactionCoordinator:
                                     "milestones": list(milestones)}))
                 # job component: request required documents from 08 for
                 # every document-bearing milestone, as they come due
-                doc_milestones = {"inspection", "appraisal", "title",
-                                  "hoa_docs", "financing_contingency"}
                 sent_date = payload.get("today")  # test/caller supplies today
                 for m in milestones:
-                    if m in doc_milestones:
+                    cfg = self.transaction_milestone_config.get(m, {})
+                    if cfg.get("needs_document"):
                         self.hub.send(_env("07", "08", "doc.request", ctx,
                                            {"milestone": m, "today": sent_date}))
                 # job component: inspector/appraiser scheduling per milestone
-                vendor_milestones = {"inspection": "inspector",
-                                     "appraisal": "appraiser"}
-                for m, kind in vendor_milestones.items():
-                    if m in milestones:
+                for m in milestones:
+                    kind = self.transaction_milestone_config.get(m, {}).get("vendor_kind")
+                    if kind:
                         self.hub.send(_env("07", "09", "vendor.request", ctx,
                                            {"kind": kind, "milestone": m}))
                         if sent_date:

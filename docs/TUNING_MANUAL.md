@@ -127,17 +127,51 @@ now the second one. Revisit when real after-action/fade-rate data exists.
 
 ## Config files (separate from code — business content, not tuning knobs)
 
-Five JSON files under `config/` hold business content that genuinely
+Six JSON files under `config/` hold business content that genuinely
 can't be guessed by code: `vendor_panel.json`, `authority_signers.json`,
-`cadence_settings.json`, `message_templates.json`, `milestone_map.json`.
-The latter three now have proposed draft content (2026-07-16) grounded in
-what the code actually implements or the playbooks already ratified —
-review, edit, and change `_status` to `RATIFIED` when approved. The first
-two (`vendor_panel.json`, `authority_signers.json`) remain genuinely
-empty — they need your actual vendor relationships and IdP logins, which
-no amount of drafting on my end can substitute for.
+`cadence_settings.json`, `message_templates.json`, `milestone_map.json`,
+`transaction_milestones.json`. Five of the six now have proposed draft
+content grounded in what the code actually implements or the playbooks
+already ratified — review, edit, and change `_status` to `RATIFIED` when
+approved. `vendor_panel.json` and `authority_signers.json` remain
+genuinely empty — they need your actual vendor relationships and IdP
+logins, which no amount of drafting on my end can substitute for.
+
+`cadence_settings.json` (2026-07-17): now covers all 15 tunables in the
+Ratified table above, not 9 - added `no_show_pattern`, `pricing_opinion_
+press`, and `near_miss_pattern`, the three "N occurrences before X"
+thresholds missed in the first draft.
+
+`transaction_milestones.json` (new, 2026-07-17): covers Agent 07's
+post-contract transaction milestones (inspection, appraisal, title,
+etc.) - deliberately split from `milestone_map.json`, which only ever
+covered the pre-contract *listing* lifecycle (intake through
+showing_active). These aren't overlapping duplicates of the same thing;
+they're genuinely two different milestone concepts, now each with their
+own real config. Unlike the other five, this one **actually wires into
+running code** - `Spoke07TransactionCoordinator` now accepts
+`transaction_milestone_config` as a real constructor parameter (default
+reproduces the exact prior hardcoded values), and this file's `entries`
+are exactly that default's content in ratifiable JSON form. Editing the
+JSON alone doesn't change agent behavior yet - whoever wires the swarm
+still needs to load this file and pass its content into the constructor,
+same as every other config file in this list - but there's now a real
+parameter to receive it, not just documentation describing what's
+hardcoded. Not covered: the per-milestone business logic in Agent 07's
+doc.status handling and the financing_contingency deadline case - see
+the file's own `_not_covered_here` field and the class docstring for why.
 
 ## Maintenance note
+
+Found and fixed 2026-07-17: `cadence_settings.json`, `message_templates.json`,
+and `milestone_map.json` had real drafted content here in listing-agents
+that was never propagated back to listing-agents-blueprint (the supposed
+ratified source) - blueprint still had the bare `<example>` placeholder
+template for all three. `vendor_panel.json`/`authority_signers.json` were
+correctly identical in both (genuinely empty in both, as intended). Synced
+all four config files (including the new `transaction_milestones.json`)
+to blueprint. If you edit any `config/*.json` file going forward, it needs
+updating in **both** repos, or the same drift happens again.
 
 If you add a new agent or a new threshold, add it to this table in the
 same commit — that's the whole point of keeping this centralized instead
