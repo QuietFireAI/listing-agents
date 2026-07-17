@@ -65,6 +65,7 @@ Dispatcher returns an `ack`.
 | IN | ← 05 MLS & Listing Mgmt | Current listing status | `status.response` |
 | IN | ← 11 Client Communication | Post-showing feedback relayed | `showing.feedback_response` |
 | IN | ← 11 Client Communication / 18 Calendar & Task | No-show reported | `showing.no_show` |
+| IN | ← 09 Vendor Coordination | Late vendor cancellation that may affect a scheduled showing (e.g. stager, cleaner) | `vendor.cancellation_notice` |
 | OUT | → 18 Calendar & Task | Wait-state signal (feedback pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other

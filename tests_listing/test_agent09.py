@@ -130,6 +130,51 @@ def test_explicitly_non_regulated_vendor_skips_human_gate(tmp_path):
     assert not any("never auto-rebooked" in c["payload"].get("reason", "") for c in clar)
 
 
+# --------------------------- THE FIX: real notification to 07 and 06
+def test_late_cancellation_reaches_07_and_names_the_at_risk_milestone(tmp_path):
+    """Was: 07's only signal was the 7-day holdup timer (built for
+    silence, wrong mechanism for a definitive cancellation). Fixed: a
+    real, direct, immediate vendor.cancellation_notice that 07 maps back
+    to the actual affected milestone deadline."""
+    from dispatcher.listing_spokes_07 import Spoke07TransactionCoordinator
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    tc = Spoke07TransactionCoordinator(hub)
+    hub.on_turn_start()
+    ctx = "v-010"
+    tc.timelines[ctx] = {"inspection": {"deadline": "2026-08-15",
+                                        "satisfied": False, "artifact": None}}
+
+    hub.send(vendor_event(ctx, {"event_kind": "cancellation",
+                                "kind": "inspector", "vendor_id": "insp-1"}))
+
+    escalations = list(hub.queues["escalation.legal_line"])
+    at_risk = [e for e in escalations
+              if e["client_context_id"] == ctx
+              and "at risk" in e["trigger"]]
+    assert at_risk, "07 must name the actual affected milestone, not a bare vendor kind"
+    assert "inspection" in at_risk[0]["trigger"]
+    assert "2026-08-15" in at_risk[0]["trigger"]
+
+
+def test_late_cancellation_reaches_06_for_showing_impact_review(tmp_path):
+    """Was: 09 had no legal route to 06 at all - the tuple named 06
+    explicitly and it was structurally unreachable."""
+    from dispatcher.listing_spokes_06 import Spoke06ShowingScheduler
+    hub = make_hub(str(tmp_path))
+    Spoke09VendorCoordination(hub, roster=ROSTER)
+    Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "v-011"
+
+    hub.send(vendor_event(ctx, {"event_kind": "cancellation",
+                                "kind": "inspector", "vendor_id": "insp-1"}))
+
+    clar = persisted(hub, "clarification.request")
+    assert any(c["from_agent"] == "06" and "confirmed showing" in c["payload"]["reason"]
+              for c in clar), "06 must actually receive and process the notice"
+
+
 def test_rate_change_halts_to_human(tmp_path):
     hub = make_hub(str(tmp_path))
     Spoke09VendorCoordination(hub, roster=ROSTER)

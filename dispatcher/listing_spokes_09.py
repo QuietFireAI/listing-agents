@@ -24,7 +24,12 @@ def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN):
 class Spoke09VendorCoordination:
     """DECISIONS.md tuples implemented directly:
       1. vendor cancels late -> notify 07/06 immediately + roster
-         alternatives; regulated roles never auto-rebooked without human
+         alternatives; regulated roles never auto-rebooked without human.
+         Fixed 2026-07-16: 09 had no route to 06 at all, and the
+         "immediate" notification to 07 was actually the 7-day holdup
+         timer - built for silence/non-response, the wrong mechanism for
+         a definitive cancellation. Added a real, direct
+         vendor.cancellation_notice route to both.
       2. credential expires mid-engagement -> flag before any next scheduling
       3. vendor proposes rate change mid-job -> halt + human, RESPA-adjacent
       4. deliverable arrives partial -> report partial truthfully, never
@@ -42,6 +47,12 @@ class Spoke09VendorCoordination:
           approved vendor to human, never self-substitute
       11. work scope grows on-site -> stop-work message per template,
           scope changes are human-approved
+
+    Open question, not resolved here (same class as Agents 04 and 06):
+    tuple 10's "offer next approved vendor" sends only a text reason, no
+    computed candidate from the roster - may be intentional (human's own
+    judgment, or 11's template layer, picks the actual replacement) rather
+    than a gap. Not changed without confirming which it is.
     """
 
     def __init__(self, hub, roster: dict[str, dict] | None = None):
@@ -149,10 +160,14 @@ class Spoke09VendorCoordination:
             # a self-reported flag on the cancellation event itself is the
             # same class of bug as trusting an echoed doc_type in Agent 08.
             regulated = self.roster.get(vendor_id, {}).get("regulated", True)
-            # 09 isn't a legal sender of deadline.alert (only 07 is, per
-            # routes.json) - notify via interaction.log to 14 instead. 07
-            # learns about the resulting stall through its own
-            # check_vendor_holdups timer, not a direct push from 09.
+            # tuple 1: notify 07/06 IMMEDIATELY - not the 7-day holdup
+            # timer (built for silence/non-response, the wrong mechanism
+            # for a definitive cancellation) and not silence for 06
+            # (previously unreachable - no route existed at all).
+            self.hub.send(_env("09", "07", "vendor.cancellation_notice", ctx,
+                               {"vendor_kind": kind, "vendor_id": vendor_id}))
+            self.hub.send(_env("09", "06", "vendor.cancellation_notice", ctx,
+                               {"vendor_kind": kind, "vendor_id": vendor_id}))
             self.hub.send(_env("09", "14", "interaction.log", ctx,
                                {"kind": "vendor_cancelled_late",
                                 "vendor_kind": kind}))

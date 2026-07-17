@@ -111,6 +111,25 @@ class Spoke06ShowingScheduler:
     def handle(self, env: Envelope):
         ctx = env.client_context_id
 
+        if env.intent == "vendor.cancellation_notice":
+            # A vendor relevant to this context cancelled late (09's
+            # direct, immediate signal - tuple 1 on 09's side). This
+            # agent has no existing state linking a specific vendor to a
+            # specific confirmed showing, so it can't automatically judge
+            # which showing (if any) is affected - flagging for human
+            # review rather than guessing, matching the ambiguity
+            # protocol (section 6).
+            self.hub.send(_env("06", "14", "interaction.log", ctx,
+                               {"kind": "vendor_cancellation_received",
+                                "vendor_kind": env.payload.get("vendor_kind")}))
+            self.hub.send(_env("06", "queue", "clarification.request", ctx,
+                               {"reason": f"vendor "
+                                         f"{env.payload.get('vendor_kind')!r} "
+                                         f"cancelled late - human should "
+                                         f"check whether a confirmed showing "
+                                         f"depends on this vendor's work"}))
+            return
+
         if env.intent == "showing.request":
             payload = env.payload
 

@@ -98,6 +98,36 @@ class Spoke07TransactionCoordinator:
         if self._wire_check(payload, ctx):
             return
 
+        if env.intent == "vendor.cancellation_notice":
+            # 09's direct, immediate signal (tuple 1 on 09's side) - not
+            # the 7-day holdup timer, which is built for silence/non-
+            # response, the wrong mechanism for a definitive cancellation.
+            # Map the vendor kind back to the actual milestone it was
+            # scheduled for, using the same mapping this agent already
+            # uses to order inspector/appraiser vendors, so the alert
+            # names the real at-risk deadline instead of a bare vendor
+            # kind with no timeline context.
+            kind_to_milestone = {"inspector": "inspection", "appraiser": "appraisal"}
+            vendor_kind = payload.get("vendor_kind")
+            milestone = kind_to_milestone.get(vendor_kind)
+            deadline = (self.timelines.get(ctx, {}).get(milestone, {}).get("deadline")
+                       if milestone else None)
+            self.hub.escalate("escalation.legal_line",
+                              {"client_context_id": ctx,
+                               "trigger": f"vendor ({vendor_kind!r}) "
+                                         f"cancelled late" +
+                                         (f" - milestone {milestone!r} "
+                                          f"(deadline {deadline!r}) is now "
+                                          f"at risk" if milestone else
+                                          " - no tracked milestone maps to "
+                                          "this vendor kind"),
+                               "agent": "07"})
+            self.hub.send(_env("07", "14", "interaction.log", ctx,
+                               {"kind": "vendor_cancellation_received",
+                                "vendor_kind": vendor_kind,
+                                "affected_milestone": milestone}))
+            return
+
         if env.intent == "config.update":
             if "offer_status" in payload:
                 stage_data = payload["offer_status"]

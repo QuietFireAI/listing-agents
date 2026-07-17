@@ -472,6 +472,16 @@
    ]
   },
   {
+   "intent": "vendor.cancellation_notice",
+   "senders": [
+    "09"
+   ],
+   "receivers": [
+    "07",
+    "06"
+   ]
+  },
+  {
    "intent": "compliance.notice",
    "senders": [
     "10",

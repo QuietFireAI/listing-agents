@@ -58,6 +58,7 @@ Dispatcher returns an `ack`.
 | OUT | → 18 Calendar & Task | Appointments | `calendar.event` |
 | OUT | → HITL queue | Term negotiation requests | `escalation.legal_line` |
 | IN | ← external vendor systems | Vendor-side event (cancellation, rate change, deliverable, invoice, no-show, scope change) | `vendor.event` |
+| OUT | → 07 Transaction Coordinator / 06 Showing Scheduler | Late vendor cancellation, immediate (not the 7-day holdup timer - a definitive cancellation needs a direct signal) | `vendor.cancellation_notice` |
 | OUT | → 18 Calendar & Task | Wait-state signal (vendor confirmation pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other

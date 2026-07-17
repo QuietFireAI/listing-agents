@@ -64,6 +64,7 @@ Dispatcher returns an `ack`.
 | OUT | → HITL queue | Missed or at-risk deadline, contract questions | `escalation.legal_line` |
 | OUT | → 14 CRM & Pipeline | Milestone log | `interaction.log` |
 | IN | ← 09 Vendor Coordination | Inspection/appraisal deliverable, direct | `deliverable.release` |
+| IN | ← 09 Vendor Coordination | Late vendor cancellation, immediate - not the 7-day holdup timer | `vendor.cancellation_notice` |
 | OUT | → 18 Calendar & Task | Wait-state signal (vendor deliverable pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other
