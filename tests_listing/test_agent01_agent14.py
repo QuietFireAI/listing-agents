@@ -215,6 +215,157 @@ def test_out_of_scope_property_logs_and_escalates_never_redirects(tmp_path):
     assert persisted(hub, "lead.captured")  # still captured, just flagged
 
 
+# --------------------------- THE FIX: fail-open brokerage_scope (2026-07-17)
+def test_REGRESSION_unconfigured_scope_fails_closed_not_open(tmp_path):
+    """Was: out_of_scope = (addr is not None AND self.brokerage_scope AND
+    addr not in self.brokerage_scope) - the truthy check on the scope SET
+    ITSELF meant an empty/unconfigured scope short-circuited to False,
+    treating every property as in-scope. The exact scenario the existing
+    test above never exercised (it always supplied a non-empty scope)."""
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)  # no brokerage_scope supplied at all - unconfigured
+    hub.on_turn_start()
+
+    hub.send(signal("lead-020", {
+        "channel": "web_form", "name": "Anyone",
+        "property_interest": {"listing_id": "ANYTHING"},
+    }))
+    assert hub.queues["escalation.legal_line"], \
+        "an unconfigured scope must fail closed (everything out of scope), not open"
+
+
+# ------------------------------------- THE FIX: tuple 3, demands a human
+def test_caller_demands_human_now_escalates_and_still_captures(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    hub.send(signal("lead-021", {"channel": "call", "name": "Urgent Caller",
+                                 "message": "I want to talk to a human right now"}))
+    assert hub.queues["escalation.legal_line"]
+    assert persisted(hub, "lead.captured"), \
+        "demanding a human must not drop the capture of what's already given"
+
+
+# ------------------------------ THE FIX: tuple 7, recording consent refused
+def test_recording_consent_refused_is_contact_only_no_nurture(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    hub.send(signal("lead-022", {"channel": "call", "name": "Wary Caller",
+                                 "budget": 500000, "timeline": "3 months",
+                                 "recording_consent": "no"}))
+    lead = persisted(hub, "record.request")
+    assert lead  # dedupe still requested
+    # trace the actual downstream lead object by hand, not just a status code
+    record_env = Envelope(from_agent="14", to_agent="01", intent="record.response",
+                          client_context_id="lead-022",
+                          payload={"known": False, "consent": {}, "property_interests": []},
+                          provenance={"source": "spoke-14", "captured_at": "runtime",
+                                      "verbatim_available": True})
+    hub.send(record_env)
+    captured = persisted(hub, "lead.captured")[-1]["payload"]
+    assert captured["name"] is None, "name must not carry through when recording consent is refused"
+    assert captured["budget"] is None
+    assert captured["no_nurture_entry"] is True
+    assert captured["consent"] == {"call": "no", "text": "no", "email": "no"}
+
+
+# -------------------------- THE FIX: tuple 10, prior relationship confirm
+def test_prior_relationship_claim_escalates_for_human_confirmation(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    hub.send(signal("lead-023", {"channel": "web_form", "name": "Old Client",
+                                 "prior_relationship_claim": "worked with agent in 2019"}))
+    assert hub.queues["escalation.legal_line"], \
+        "a prior-relationship claim must actively ask a human to confirm it, not just be stored"
+
+
+# ----------------------- THE FIX: tuple 14, full-field low-confidence null
+def test_low_transcription_confidence_nulls_all_fields_not_just_name(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+    ctx = "lead-024"
+    hub.send(signal(ctx, {"channel": "call", "name": "Garbled Name",
+                         "timeline": "garbled timeline", "budget": 999999,
+                         "transcription_confidence": "low"}, frm="20"))
+    record_env = Envelope(from_agent="14", to_agent="01", intent="record.response",
+                          client_context_id=ctx,
+                          payload={"known": False, "consent": {}, "property_interests": []},
+                          provenance={"source": "spoke-14", "captured_at": "runtime",
+                                      "verbatim_available": True})
+    hub.send(record_env)
+    captured = persisted(hub, "lead.captured")[-1]["payload"]
+    assert captured["name"] is None
+    assert captured["timeline"] is None, "timeline must also null on low-confidence transcription"
+    assert captured["budget"] is None, "budget must also null on low-confidence transcription"
+    assert captured["preapproval_status"] == "unknown"
+
+
+# ------------------------------- THE FIX: tuple 15, opt-out confirmation
+def test_opt_out_mid_capture_sends_confirmation_once(tmp_path):
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    hub.on_turn_start()
+
+    hub.send(signal("lead-025", {"channel": "call", "name": "Done With This",
+                                 "revoke_all_contact": True}))
+    confirmations = persisted(hub, "client.message.request")
+    assert any(c["payload"].get("template") == "opt_out_confirmed" for c in confirmations), \
+        "an opt-out must actively send a confirmation, not just suppress silently"
+
+
+# --------------------------- THE FIX: tuple 16, record.response timeout
+def test_record_response_timeout_retries_once_then_holds_handoff_failed(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke01LeadCapture(hub, record_response_timeout_days=1)
+    hub.on_turn_start()
+    ctx = "lead-026"
+    hub.send(signal(ctx, {"channel": "web_form", "name": "Waiting",
+                         "today": "2026-07-01"}))
+    assert ctx in spoke.pending
+
+    # first sweep past the timeout: retries once
+    result1 = spoke.check_record_response_timeout(ctx, "2026-07-03")
+    assert result1 == "retried"
+    retries_sent = persisted(hub, "record.request")
+    assert len(retries_sent) == 2  # original + the retry
+
+    # second sweep, still no response: holds with handoff.failed
+    result2 = spoke.check_record_response_timeout(ctx, "2026-07-05")
+    assert result2 == "handoff.failed"
+    clar = persisted(hub, "clarification.request")
+    assert any("handoff.failed" in c["payload"].get("reason", "") for c in clar)
+
+
+def test_record_response_arriving_clears_retry_state(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke01LeadCapture(hub, record_response_timeout_days=1)
+    hub.on_turn_start()
+    ctx = "lead-027"
+    hub.send(signal(ctx, {"channel": "web_form", "name": "Resolved",
+                         "today": "2026-07-01"}))
+    spoke.check_record_response_timeout(ctx, "2026-07-03")  # retries once
+    record_env = Envelope(from_agent="14", to_agent="01", intent="record.response",
+                          client_context_id=ctx,
+                          payload={"known": False, "consent": {}, "property_interests": []},
+                          provenance={"source": "spoke-14", "captured_at": "runtime",
+                                      "verbatim_available": True})
+    hub.send(record_env)
+    assert ctx not in spoke.retry_count
+    assert ctx not in spoke.pending
+
+
 # ------------------------------------------------------ multi-channel merge
 def test_simultaneous_call_and_web_form_merge_by_channel_priority(tmp_path):
     hub = make_hub(str(tmp_path))

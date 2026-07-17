@@ -58,6 +58,7 @@ Dispatcher returns an `ack`.
 | Direction | Route (via 00) | Trigger | Intent |
 |---|---|---|---|
 | IN | ← 05 / 06 / 07 / 08 / 10 / 16 | Update triggers | `status.update` / `deadline.alert` / `client.message.request` |
+| IN | ← 01 Lead Capture | Opt-out confirmation, once (tuple 15, added 2026-07-17) | `client.message.request` |
 | OUT | → clients via approved channels | Routine updates | `client.message.send` |
 | OUT | → owning agent via 00 | Client replies | routed by content |
 | OUT | → 10 Market Data | Data for client market updates | `data.request` |

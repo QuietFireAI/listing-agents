@@ -22,6 +22,14 @@ _LEGAL_LINE_WORDS = ("what should i offer", "should i list at", "negotiate",
                     "contract language", "legal opinion", "is this legal",
                     "represent me in", "counter their offer")
 
+# tuple 3: caller demands a human now, escalate immediately (capture what's
+# already given, don't drop it). Fixed 2026-07-17 - zero code existed for
+# this at all.
+_DEMANDS_HUMAN_WORDS = ("speak to a human", "talk to a human", "talk to a "
+                       "person", "speak to a person", "get me a person",
+                       "real person", "speak to someone", "human agent",
+                       "not a robot", "let me talk to someone", "human now")
+
 
 def _env(frm, to, intent, ctx, payload, confidence=UNKNOWN, escalation_flag=False):
     return Envelope(from_agent=frm, to_agent=to, intent=intent,
@@ -230,8 +238,11 @@ class Spoke01LeadCapture:
     suppressed). Fixed here.
     """
 
+    # TUNABLE (added 2026-07-17): record_response_timeout_days=1.
+    # See docs/TUNING_MANUAL.md to change.
     def __init__(self, hub, brokerage_scope: set[str] | None = None,
-                 dnc_list: set[str] | None = None):
+                 dnc_list: set[str] | None = None,
+                 record_response_timeout_days: int = 1):
         self.hub = hub
         self.pending: dict[str, dict] = {}
         # addresses/listing-IDs this brokerage actually lists (tuple: property
@@ -241,12 +252,26 @@ class Spoke01LeadCapture:
         self.brokerage_scope = brokerage_scope or set()
         # phone/email already on the do-not-call/do-not-contact list
         self.dnc_list = dnc_list or set()
+        self.record_response_timeout_days = record_response_timeout_days
+        # tuple 16: record.response never returns -> retry once, then hold
+        # with handoff.failed. Fixed 2026-07-17 - zero code existed for
+        # this at all; a non-answering 14 left pending[ctx] stuck forever
+        # with no timeout, no retry, no signal.
+        self.retry_count: dict[str, int] = {}
         hub.register("01", self.handle)
 
     def _legal_line_hit(self, payload: dict) -> str | None:
         note = str(payload.get("message", "")) + " " + str(payload.get("request", ""))
         low = note.lower()
         for w in _LEGAL_LINE_WORDS:
+            if w in low:
+                return note.strip()
+        return None
+
+    def _demands_human_hit(self, payload: dict) -> str | None:
+        note = str(payload.get("message", "")) + " " + str(payload.get("request", ""))
+        low = note.lower()
+        for w in _DEMANDS_HUMAN_WORDS:
             if w in low:
                 return note.strip()
         return None
@@ -296,6 +321,24 @@ class Spoke01LeadCapture:
                                    "trigger": "abusive contact",
                                    "verbatim": payload.get("message", "")})
 
+            # --- tuple 3: caller demands a human now -> escalate
+            # immediately, but still capture what's already given (doesn't
+            # return early, same as abusive above). Fixed 2026-07-17 - zero
+            # code existed for this tuple at all. ---
+            demands_human = self._demands_human_hit(payload)
+            if demands_human:
+                self.hub.ingest_spoke_trace(
+                    "01", env.envelope_id,
+                    thought=f"caller demands a human now: {demands_human!r} - "
+                            f"escalating immediately, still capturing what's "
+                            f"already been given rather than dropping it",
+                    result="escalated: demands_human")
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"caller demands a human now: "
+                                             f"{demands_human!r}",
+                                   "agent": "01"})
+
             # --- DNC check: the list wins over the opportunity. Still
             # captured (source + suppression), never silently dropped. ---
             contact = payload.get("phone") or payload.get("email")
@@ -305,7 +348,6 @@ class Spoke01LeadCapture:
             interest = payload.get("property_interest", {})
             addr_or_listing = interest.get("address") or interest.get("listing_id")
             out_of_scope = (addr_or_listing is not None
-                           and self.brokerage_scope
                            and addr_or_listing not in self.brokerage_scope)
             if out_of_scope:
                 self.hub.ingest_spoke_trace(
@@ -329,8 +371,28 @@ class Spoke01LeadCapture:
             if consent_raw is None:
                 consent_raw = {"call": "unknown", "text": "unknown", "email": "unknown"}
             # "stop contacting me" mid-capture -> immediate blanket suppression
+            # + confirmation once (tuple 15). Fixed 2026-07-17: this agent had
+            # no route to 11 at all before, so no confirmation could ever be
+            # sent - suppression fired but nothing told the client it worked.
             if payload.get("revoke_all_contact"):
                 consent_raw = {k: "no" for k in ("call", "text", "email")}
+                self.hub.send(_env("01", "11", "client.message.request", ctx,
+                                   {"template": "opt_out_confirmed"}))
+
+            # tuple 7: caller refuses consent to RECORDING (distinct from
+            # tuple 2's messaging consent) -> contact info only, mark
+            # no-consent, NO nurture entry. Fixed 2026-07-17 - zero code
+            # existed for this tuple; only messaging consent (tuple 2) was
+            # ever checked.
+            recording_consent_refused = payload.get("recording_consent") == "no"
+            if recording_consent_refused:
+                self.hub.ingest_spoke_trace(
+                    "01", env.envelope_id,
+                    thought="caller refuses consent to recording - contact "
+                            "info only, marking no-consent, no nurture "
+                            "entry per this tuple specifically (distinct "
+                            "from the general messaging-consent tuple)",
+                    result="recording_consent_refused: contact-only capture")
 
             # --- Multiple near-simultaneous inbounds for the same context:
             # merge by channel priority (call > text > web_form), drop
@@ -358,9 +420,16 @@ class Spoke01LeadCapture:
             if preapproval not in ("yes", "no", "unknown"):
                 preapproval = "unknown"  # never inferred
 
-            # low-confidence transcription -> mark unknown, never tier on it
-            if payload.get("transcription_confidence") == "low":
-                name = None if channel == "call" else name
+            # low-confidence transcription -> mark unknown, never tier on it.
+            # Fixed 2026-07-17: only name was nulled before - timeline/budget/
+            # preapproval could be equally garbled from the same transcription
+            # and were being tiered on regardless.
+            low_confidence = payload.get("transcription_confidence") == "low"
+            if low_confidence and channel == "call":
+                name = None
+                timeline = None
+                budget = None
+                preapproval = "unknown"
 
             # obviously-false contact data: pass through an explicit
             # upstream signal, never guess at "obviously false" ourselves
@@ -378,20 +447,40 @@ class Spoke01LeadCapture:
                 interests = interests + [interest]
 
             captured = {
-                "name": {"value": name, "source": STATED_BY_PARTY} if name else None,
+                "name": ({"value": name, "source": STATED_BY_PARTY} if name
+                        and not recording_consent_refused else None),
                 "contact": {"value": contact, "source": STATED_BY_PARTY,
                            "suspect": contact_valid_flag},
                 "property_interests": interests,
-                "timeline": {"value": timeline, "source": STATED_BY_PARTY} if timeline else None,
-                "budget": {"value": budget, "source": STATED_BY_PARTY} if budget else None,
-                "preapproval_status": preapproval,
-                "consent": consent_raw,
+                "timeline": ({"value": timeline, "source": STATED_BY_PARTY}
+                            if timeline and not recording_consent_refused else None),
+                "budget": ({"value": budget, "source": STATED_BY_PARTY}
+                          if budget and not recording_consent_refused else None),
+                "preapproval_status": (UNKNOWN if recording_consent_refused
+                                      else preapproval),
+                "consent": ({k: "no" for k in ("call", "text", "email")}
+                           if recording_consent_refused else consent_raw),
+                "no_nurture_entry": recording_consent_refused,
                 "dnc": on_dnc,
                 "notes_verbatim": notes,
                 "prior_relationship_claim": payload.get("prior_relationship_claim"),
             }
+
+            # tuple 10: prior relationship claimed -> captured as stated_by_
+            # party (done above), AND human confirms before any history is
+            # assumed. Fixed 2026-07-17 - the claim was stored but nothing
+            # ever actively asked a human to confirm it.
+            if payload.get("prior_relationship_claim"):
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": f"prior relationship claimed: "
+                                             f"{payload['prior_relationship_claim']!r} "
+                                             f"- human confirmation required "
+                                             f"before any history is assumed",
+                                   "agent": "01"})
             self.pending[ctx] = {**captured, "raw_inputs": raw_inputs, "notes": notes,
-                                 "property_interests": interests}
+                                 "property_interests": interests,
+                                 "requested_at": payload.get("today")}
 
             if on_dnc:
                 self.hub.escalate("escalation.legal_line",
@@ -423,6 +512,7 @@ class Spoke01LeadCapture:
                 self.hub.send(_env("01", "queue", "clarification.request",
                                    ctx, {"reason": "uncorrelated record.response"}))
                 return
+            self.retry_count.pop(ctx, None)
             payload = dict(pending)
             raw_inputs = payload.pop("raw_inputs")
             notes = payload.pop("notes")
@@ -465,3 +555,44 @@ class Spoke01LeadCapture:
                                 "consent": merged_consent,
                                 "property_interests": merged_interests}))
             return
+
+    def check_record_response_timeout(self, ctx: str, today: str):
+        """Tuple 16: record.response never returns -> retry once, then hold
+        the lead in pending with handoff.failed - never tier undeduped.
+        Called by a scheduler/sweep, matching Agent 07's check_deadlines
+        and Agent 08's document-chase pattern - this agent had no
+        equivalent sweep at all before 2026-07-17."""
+        import datetime
+        pending = self.pending.get(ctx)
+        if pending is None or not pending.get("requested_at"):
+            return "no_pending_or_no_timestamp"
+        requested = datetime.date.fromisoformat(pending["requested_at"])
+        elapsed_days = (datetime.date.fromisoformat(today) - requested).days
+        if elapsed_days < self.record_response_timeout_days:
+            return "within_timeout"
+
+        retries = self.retry_count.get(ctx, 0)
+        if retries == 0:
+            self.retry_count[ctx] = 1
+            self.hub.ingest_spoke_trace(
+                "01", f"timeout-retry-{ctx}",
+                thought=f"ctx={ctx!r}: record.response never returned "
+                        f"after {elapsed_days}d - retrying record.request "
+                        f"once before giving up, per this tuple",
+                result="retried: record.request resent")
+            self.hub.send(_env("01", "14", "record.request", ctx,
+                               {"dedupe_key": ctx}))
+            return "retried"
+
+        # already retried once and STILL nothing - hold, never tier undeduped
+        self.hub.ingest_spoke_trace(
+            "01", f"timeout-failed-{ctx}",
+            thought=f"ctx={ctx!r}: retried once, still no record.response "
+                    f"after {elapsed_days}d - holding in pending with "
+                    f"handoff.failed, never tiering an undeduped lead",
+            result="held: handoff.failed")
+        self.hub.send(_env("01", "queue", "clarification.request", ctx,
+                           {"reason": "record.response never returned after "
+                                     "a retry - handoff.failed, lead held "
+                                     "undeduped"}))
+        return "handoff.failed"

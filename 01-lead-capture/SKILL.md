@@ -65,6 +65,7 @@ Dispatcher returns an `ack`.
 | IN | ← 14 CRM & Pipeline | Record match / no-match | `record.response` (`in_reply_to`) |
 | IN | ← 20 Social Media Monitoring | Social lead signals | `lead.signal` |
 | IN | ← external (call/web-form/text channel systems) | Direct inbound contact | `lead.inbound` |
+| OUT | → 11 Client Communication | Opt-out confirmation, once (tuple 15 - added 2026-07-17, this agent had no route to confirm an opt-out at all before) | `client.message.request` |
 | OUT | → 18 Calendar & Task | Wait-state signal (dedupe pending) | `agent.status` |
 
 This agent has no other edges. If a task appears to require any other

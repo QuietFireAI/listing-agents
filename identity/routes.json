@@ -167,6 +167,7 @@
   {
    "intent": "client.message.request",
    "senders": [
+    "01",
     "06",
     "08",
     "13",

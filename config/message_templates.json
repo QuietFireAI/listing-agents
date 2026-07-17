@@ -102,6 +102,13 @@
    "approved_by": "<owner name/date>"
   },
   {
+   "template_id": "opt_out_confirmed",
+   "audience": "client",
+   "purpose": "Confirm a mid-capture request to stop all contact (Agent 01 tuple 15, added 2026-07-17 - this agent had no route to send this confirmation at all before)",
+   "body": "Understood - we won't contact you again. If that changes, you're welcome to reach back out any time.",
+   "approved_by": "<owner name/date>"
+  },
+  {
    "template_id": "ask_for_particulars",
    "audience": "client",
    "purpose": "Client referenced a conversation not on file - ask for details rather than pretend to recall it",
