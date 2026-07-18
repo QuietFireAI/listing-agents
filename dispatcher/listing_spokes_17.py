@@ -108,7 +108,48 @@ class Spoke17ComplianceFairHousing:
 
         if env.intent == "config.update":
             if "ruleset" in payload and "version" in payload:
-                self.ruleset = payload["ruleset"]
+                # Shape validation, added 2026-07-18 (was: any dict
+                # adopted wholesale). Same discipline as 02's rubric
+                # gate: a malformed ruleset is REJECTED with the prior
+                # one staying active (or None = fail closed), never
+                # silently adopted so that _find_prohibited quietly
+                # matches nothing. Every prohibited_phrases entry needs
+                # phrase+rule_id; state_rules maps state -> list of the
+                # same shape.
+                rs = payload["ruleset"]
+                problems = []
+                if not isinstance(rs, dict):
+                    problems.append("ruleset is not a dict")
+                else:
+                    for i, r in enumerate(rs.get("prohibited_phrases", [])):
+                        if not isinstance(r, dict) or not r.get("phrase")                                 or not r.get("rule_id"):
+                            problems.append(f"prohibited_phrases[{i}] missing "
+                                            f"phrase/rule_id")
+                    sr = rs.get("state_rules", {})
+                    if not isinstance(sr, dict):
+                        problems.append("state_rules is not a dict")
+                    else:
+                        for st, rules in sr.items():
+                            for i, r in enumerate(rules or []):
+                                if not isinstance(r, dict) or not r.get("phrase")                                         or not r.get("rule_id"):
+                                    problems.append(f"state_rules[{st}][{i}] "
+                                                    f"missing phrase/rule_id")
+                if problems:
+                    self.hub.ingest_spoke_trace(
+                        "17", env.envelope_id,
+                        thought=f"ruleset v{payload['version']} malformed: "
+                                f"{problems} - rejecting; prior ruleset "
+                                f"(v{self.ruleset_version}) stays active; a "
+                                f"ruleset that silently matches nothing is "
+                                f"an approve-by-omission machine",
+                        result="rejected: malformed_ruleset")
+                    self.hub.send(_env("17", "queue", "clarification.request",
+                                       ctx, {"reason": "malformed compliance "
+                                                       "ruleset rejected",
+                                            "problems": problems,
+                                            "version": payload["version"]}))
+                    return
+                self.ruleset = rs
                 self.ruleset_version = payload["version"]
             return
 

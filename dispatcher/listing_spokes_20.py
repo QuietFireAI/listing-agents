@@ -127,6 +127,21 @@ class Spoke20SocialMediaMonitoring:
                                                   "identity not confirmed "
                                                   "or asserted")
                 self.hub.escalate("escalation.complaint", escalation_payload)
+                # P14 step 2, ratified but unwired for the 20-sourced case
+                # until 2026-07-18 (found by the first end-to-end P14
+                # run): only 11's OWN angry-client path armed the
+                # outbound hold - a complaint arriving via social left
+                # every scheduled touch still firing at the complaining
+                # party. Armed here over the existing legal 20->11 lane
+                # as a RESERVED CONTROL TEMPLATE (never rendered, never
+                # sent to a client - 11 intercepts it before the
+                # outbound path). Flagged in the review: the cleaner
+                # long-term wiring is a ratified 20->11 hold intent,
+                # owner's call.
+                self.hub.send(_env("20", "11", "client.message.request", ctx,
+                                   {"template": "__p14_complaint_hold__",
+                                    "reason": "complaint escalated from "
+                                              "social monitoring"}))
                 return
 
             if effective_sentiment == "praise":

@@ -186,6 +186,22 @@ class Spoke11ClientCommunication:
             return
 
         if env.intent in ("status.update", "deadline.alert", "client.message.request"):
+            if payload.get("template") == "__p14_complaint_hold__":
+                # Reserved P14 control (see 20's complaint branch) - arms
+                # the outbound hold, renders NOTHING, sends NOTHING to any
+                # client. Released only by the human's
+                # resolve_complaint_hold, same as the 11-sourced path.
+                self.complaint_hold.add(ctx)
+                self.hub.ingest_spoke_trace(
+                    "11", env.envelope_id,
+                    thought=f"complaint hold armed for ctx={ctx!r} from a "
+                            f"20-sourced escalation - all scheduled touches "
+                            f"for this context hold until human release",
+                    result="complaint_hold_armed")
+                self.hub.send(_env("11", "14", "interaction.log", ctx,
+                                   {"kind": "complaint_hold_armed",
+                                    "source": "20"}))
+                return
             hour = payload.get("hour", 12)
             alert_class = payload.get("alert_class")
 

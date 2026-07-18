@@ -686,3 +686,47 @@ def test_agent01_resolves_wait_on_handoff_failed(tmp_path):
              if e["from_agent"] == "01" and e["to_agent"] == "18"]
     assert any(e["payload"].get("resolved") is True for e in waits), \
         "escalated handoff must clear the wait in 18 - no double reporting"
+
+
+# ------------- freeze is mechanical now (2026-07-18), not a trace word
+def test_frozen_record_refuses_writes_until_signed_release(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke14 = Spoke14CRMPipeline(hub)
+    hub.on_turn_start()
+    hub.send(Envelope(from_agent="07", to_agent="14", intent="interaction.log",
+                      client_context_id="fz-1", payload={"kind": "note", "v": 1},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert len(spoke14.records["fz-1"]) == 1
+    # deletion request freezes
+    from dispatcher.signatures import Ed25519Signer, Ed25519Verifier
+    # make_hub in this file has no signer; drive freeze via direct call path
+    env = Envelope(from_agent="human", to_agent="14", intent="config.update",
+                   client_context_id="fz-1",
+                   payload={"action": "delete_record"},
+                   provenance={"source": "human", "captured_at": "runtime",
+                               "verbatim_available": True})
+    spoke14.handle(env)
+    assert "fz-1" in spoke14.frozen
+    # writes now refuse - structurally
+    hub.send(Envelope(from_agent="07", to_agent="14", intent="interaction.log",
+                      client_context_id="fz-1", payload={"kind": "note", "v": 2},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert len(spoke14.records["fz-1"]) == 1, "frozen record must not grow"
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("frozen record" in r for r in reasons), "refusal must be declared"
+    # signed release is the only unfreeze
+    spoke14.handle(Envelope(from_agent="human", to_agent="14",
+                            intent="config.update", client_context_id="fz-1",
+                            payload={"action": "release_record_freeze"},
+                            provenance={"source": "human",
+                                        "captured_at": "runtime",
+                                        "verbatim_available": True}))
+    assert "fz-1" not in spoke14.frozen
+    hub.send(Envelope(from_agent="07", to_agent="14", intent="interaction.log",
+                      client_context_id="fz-1", payload={"kind": "note", "v": 3},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert len(spoke14.records["fz-1"]) == 2

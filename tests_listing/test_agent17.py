@@ -272,3 +272,21 @@ def test_approved_content_resubmitted_does_not_falsely_trigger_repeat_escalation
     hub.send(review("c-022", payload))
     hub.send(review("c-022", dict(payload)))
     assert hub.queues["escalation.legal_line"] == []
+
+
+# --------- ruleset adoption validation (2026-07-18, was adopt-anything)
+def test_malformed_ruleset_rejected_prior_stays_active(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke17ComplianceFairHousing(hub)
+    hub.on_turn_start()
+    good = {"prohibited_phrases": [{"phrase": "exclusive neighborhood",
+                                    "rule_id": "FH-1"}], "state_rules": {}}
+    hub.send(sign_ruleset(signer, ruleset=good, version="v1"))
+    assert spoke.ruleset_version == "v1"
+    bad = {"prohibited_phrases": [{"phrase": "no kids"}]}  # missing rule_id
+    hub.send(sign_ruleset(signer, ruleset=bad, version="v2"))
+    assert spoke.ruleset_version == "v1", "malformed ruleset must not adopt"
+    assert spoke.ruleset == good
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("malformed compliance ruleset" in r for r in reasons)

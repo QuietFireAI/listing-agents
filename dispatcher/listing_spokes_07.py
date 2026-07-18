@@ -436,10 +436,51 @@ class Spoke07TransactionCoordinator:
     def check_deadlines(self, ctx: str, today: str):
         """Alert lead time is configuration, not judgment - called by an
         external scheduler with today's date. Multiple deadlines landing
-        the same day get individual alerts (tuple 4), never summarized."""
+        the same day get individual alerts (tuple 4), never summarized.
+
+        Fixed 2026-07-18 (found by the first end-to-end P09 run): this
+        only alerted on deadline == today, an EXACT date match - so if
+        the sweep missed the due date (scheduler down a day, timeline
+        loaded late), an unsatisfied milestone went silently overdue
+        FOREVER. Now an unsatisfied milestone whose date has passed
+        alerts as overdue=True, once (tracked in _overdue_alerted, never
+        spammed daily), through the same 11/18 lanes - and financing-
+        contingency overdue still takes its legal-line escalation."""
         timeline = self.timelines.get(ctx, {})
+        if not hasattr(self, "_overdue_alerted"):
+            self._overdue_alerted: set = set()
         due_today = [(m, e) for m, e in timeline.items()
                     if not e["satisfied"] and e["deadline"] == today]
+        overdue = [(m, e) for m, e in timeline.items()
+                   if not e["satisfied"] and e.get("deadline")
+                   and e["deadline"] < today
+                   and (ctx, m) not in self._overdue_alerted]
+        for milestone, entry in overdue:
+            self._overdue_alerted.add((ctx, milestone))
+            self.hub.ingest_spoke_trace(
+                "07", f"overdue-{ctx}-{milestone}",
+                thought=f"milestone {milestone!r} deadline "
+                        f"{entry['deadline']!r} has PASSED unsatisfied "
+                        f"(today {today!r}) - alerting as overdue; a "
+                        f"deadline engine that misses the due date and "
+                        f"then never speaks again is the silent-failure "
+                        f"class this swarm exists to kill",
+                result="overdue_alert_issued")
+            self.hub.send(_env("07", "11", "deadline.alert", ctx,
+                               {"milestone": milestone,
+                                "deadline": entry["deadline"],
+                                "overdue": True}))
+            self.hub.send(_env("07", "18", "deadline.alert", ctx,
+                               {"milestone": milestone,
+                                "deadline": entry["deadline"],
+                                "overdue": True}))
+            if milestone == "financing_contingency":
+                self.hub.escalate("escalation.legal_line",
+                                  {"client_context_id": ctx,
+                                   "trigger": "financing contingency date "
+                                             "passed with no removal on "
+                                             "file - never assume waived",
+                                   "agent": "07"})
         for milestone, entry in due_today:
             self.hub.send(_env("07", "11", "deadline.alert", ctx,
                                {"milestone": milestone, "deadline": today}))

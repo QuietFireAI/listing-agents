@@ -104,6 +104,12 @@ class Spoke14CRMPipeline:
         # 11, directly) rather than each requester inventing or omitting it.
         self.buyer_agreement: dict[str, bool] = {}
         self.identity_verified: dict[str, bool] = {}
+        # Contexts frozen by a retention/deletion request. Fixed
+        # 2026-07-18: "frozen" used to be a WORD ON A TRACE - nothing
+        # mechanically blocked further writes, so a "frozen" record kept
+        # accumulating entries while supposedly held for the owner.
+        # Doctrine: instruction < detection < structural impossibility.
+        self.frozen: set[str] = set()
         self._entry_seq = 0
         hub.register("14", self.handle)
 
@@ -112,6 +118,23 @@ class Spoke14CRMPipeline:
         return f"E{self._entry_seq:06d}"
 
     def _append(self, ctx: str, kind: str, env: Envelope) -> str:
+        if ctx in self.frozen:
+            # Structural freeze: no new entries while a retention/deletion
+            # question is with the owner. The attempted write is DECLARED
+            # (audit + human queue), never silently dropped and never
+            # silently admitted - a frozen record that quietly kept
+            # growing was the defect.
+            self.hub.ingest_spoke_trace(
+                "14", env.envelope_id,
+                thought=f"write attempt ({kind!r}) on FROZEN ctx={ctx!r} - "
+                        f"record is held pending the owner's retention "
+                        f"decision; refusing the append and declaring it",
+                result="refused: record_frozen")
+            self.hub.send(_env("14", "queue", "clarification.request", ctx,
+                               {"reason": f"write attempted on frozen record "
+                                         f"({kind}) - held for owner's "
+                                         f"retention decision"}))
+            return "FROZEN"
         entry_id = self._new_entry_id()
         entry = {"entry_id": entry_id, "kind": kind,
                  "envelope_id": env.envelope_id, "from_agent": env.from_agent,
@@ -331,8 +354,21 @@ class Spoke14CRMPipeline:
                 result=f"appended={entry_id}")
             return
 
+        if env.intent == "config.update" and env.payload.get("action") == "release_record_freeze":
+            # The owner's signed resolution of a retention question - the
+            # ONLY unfreeze path, and config.update is signature-gated at
+            # the hub before it ever reaches here.
+            self.frozen.discard(ctx)
+            self.hub.ingest_spoke_trace(
+                "14", env.envelope_id,
+                thought=f"owner released the freeze on ctx={ctx!r} - "
+                        f"appends resume",
+                result="unfrozen")
+            return
+
         if env.intent == "config.update" and env.payload.get("action") == "delete_record":
             # retention/deletion is never a spoke decision - freeze + escalate
+            self.frozen.add(ctx)
             self.hub.ingest_spoke_trace(
                 "14", env.envelope_id,
                 thought="deletion/retention request - freeze the record, "

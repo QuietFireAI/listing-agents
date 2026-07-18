@@ -106,6 +106,43 @@ class Spoke12MarketingCampaign:
             if payload.get("status") == "active":
                 self.mls_confirmed[ctx] = True
                 self._check_awaiting_ccp(ctx)
+                return
+            # P05 step 1b / P03 step 1b, ratified but ZERO code until
+            # 2026-07-18 (found by the first end-to-end P05 run): this
+            # handler only reacted to "active" - a withdrawn/expired/
+            # pending status was silently ignored, so marketing for a
+            # dead or under-contract listing just kept running. Now: any
+            # non-active status halts every published campaign for the
+            # context, per platform, with the halt LEAVING the swarm
+            # (campaign.publish action=halt) and going in the books.
+            # A halt for a listing with nothing published is a no-op,
+            # logged as such - never an error, never invented work.
+            new_status = payload.get("status")
+            self.mls_confirmed[ctx] = False
+            if ctx in self.published:
+                halted = self.published.pop(ctx)
+                self.approved_awaiting_ccp.pop(ctx, None)
+                self.hub.ingest_spoke_trace(
+                    "12", env.envelope_id,
+                    thought=f"status.update {new_status!r} consumed - "
+                            f"halting ALL marketing for this context; a "
+                            f"live ad for a {new_status} listing is a "
+                            f"compliance exposure and a seller wound",
+                    result="marketing_halted")
+                self.hub.send(_env("12", "external", "campaign.publish", ctx,
+                                   {"action": "halt",
+                                    "reason": f"listing_status_{new_status}"}))
+                self.hub.send(_env("12", "14", "interaction.log", ctx,
+                                   {"kind": "marketing_halted",
+                                    "status": new_status}))
+            else:
+                self.approved_awaiting_ccp.pop(ctx, None)
+                self.hub.ingest_spoke_trace(
+                    "12", env.envelope_id,
+                    thought=f"status.update {new_status!r} consumed - "
+                            f"nothing published for this context, nothing "
+                            f"to halt; held approvals cleared",
+                    result="no_active_marketing")
             return
 
         if env.intent == "asset.release":
