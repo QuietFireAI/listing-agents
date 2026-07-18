@@ -104,11 +104,26 @@ class Spoke02LeadQualification:
         if self.rubric is None:
             return "UNKNOWN", None, ["no rubric active - scoring halted"]
 
-        budget = payload.get("budget")
+        def _unwrap(v):
+            """Agent 01's capture schema wraps stated fields as
+            {"value": ..., "source": "stated_by_party"} - its documented
+            source-attribution format. Found by the first end-to-end
+            playbook run (2026-07-18): this method compared that dict
+            against an int threshold, raising TypeError on every real
+            01-originated lead - the handler crashed, the hub
+            dead-lettered the lead, and no tier was ever produced. This
+            agent's own tests fed flat hand-built payloads, so the crash
+            was invisible until real traffic flowed. Unwrapping a
+            DOCUMENTED schema is reading, not interpreting."""
+            if isinstance(v, dict) and "value" in v and "source" in v:
+                return v["value"]
+            return v
+
+        budget = _unwrap(payload.get("budget"))
         preapproval_doc = payload.get("preapproval_doc")  # {"amount":..., "expired": bool}
-        timeline_days = payload.get("timeline_days")
-        stated_urgency = payload.get("stated_urgency")  # e.g. "high"/"low"/None
-        financing_progress = payload.get("financing_progress")  # e.g. "preapproved"/"none"/None
+        timeline_days = _unwrap(payload.get("timeline_days"))
+        stated_urgency = _unwrap(payload.get("stated_urgency"))  # e.g. "high"/"low"/None
+        financing_progress = _unwrap(payload.get("financing_progress"))  # e.g. "preapproved"/"none"/None
 
         # tuple: financing letter present but expired -> treat as no
         # verification (stated_by_party at best)

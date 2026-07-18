@@ -163,7 +163,7 @@ def test_verified_photo_deliverable_sends_listing_data_to_04(tmp_path):
         "new_listing": {"beds": 4, "sqft": 2200}, "authorize_go_live": True}))
     env = Envelope(from_agent="09", to_agent="05", intent="deliverable.release",
                   client_context_id="p-011",
-                  payload={"photos": ["a.jpg"], "verified_openable": True},
+                  payload={"photos": ["a.jpg"], "opens_correctly": True},
                   provenance={"source": "spoke-09", "captured_at": "runtime",
                               "verbatim_available": True})
     hub.send(env)

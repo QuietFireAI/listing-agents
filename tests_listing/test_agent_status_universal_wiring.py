@@ -50,7 +50,7 @@ def test_agent05_photography_wait(tmp_path):
 
     deliv = Envelope(from_agent="09", to_agent="05", intent="deliverable.release",
                     client_context_id="p-001",
-                    payload={"verified_openable": True, "photos": ["p1.jpg"]},
+                    payload={"opens_correctly": True, "photos": ["p1.jpg"]},
                     provenance={"source": "spoke-09", "captured_at": "runtime",
                                 "verbatim_available": True})
     hub.send(deliv)

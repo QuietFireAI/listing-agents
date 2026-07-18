@@ -582,6 +582,24 @@ class Spoke01LeadCapture:
                 "notes_verbatim": notes,
                 "prior_relationship_claim": payload.get("prior_relationship_claim"),
             }
+            # Contract fix, found by the first END-TO-END playbook run
+            # (2026-07-18): 02's rubric reads timeline_days,
+            # financing_progress, stated_urgency and preapproval_doc -
+            # none of which this capture schema ever forwarded, so with
+            # REAL 01 traffic 02 could never score on them (its own tests
+            # fed flat hand-built payloads that real traffic never
+            # produces). Pass-through VERBATIM when the inbound supplied
+            # them - same discipline as 19's property-fields fix: never
+            # derived (turning "2 weeks" into 14 would be the
+            # interpretation tuple 4 forbids), only forwarded.
+            for f in ("timeline_days", "financing_progress",
+                      "stated_urgency", "preapproval_doc"):
+                if f in payload and not recording_consent_refused:
+                    captured[f] = payload[f]
+            if low_confidence and channel == "call":
+                for f in ("timeline_days", "financing_progress",
+                          "stated_urgency", "preapproval_doc"):
+                    captured.pop(f, None)  # garbled transcript: never tier on it
 
             # tuple 10: prior relationship claimed -> captured as stated_by_
             # party (done above), AND human confirms before any history is

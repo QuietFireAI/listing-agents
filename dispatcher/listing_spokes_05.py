@@ -375,7 +375,15 @@ class Spoke05MLSListingManagement:
             # Phase 2 gate: "photos delivered, verified present-and-opens
             # by 09" - not just received. Only a verified deliverable
             # clears the gate to send listing.data onward to 04.
-            if not env.payload.get("verified_openable"):
+            # CONTRACT BUG fixed 2026-07-18, found by the first end-to-end
+            # P01 run: 09 (the only legal producer of this intent) emits
+            # opens_correctly, and 08 (the other consumer) reads
+            # opens_correctly - this gate alone read verified_openable, a
+            # field that exists nowhere in the producer. Every real photo
+            # deliverable therefore failed open-verification and P01
+            # Phase 2 could never open. Per-agent tests never saw it:
+            # each side's fixtures used its own field name.
+            if not env.payload.get("opens_correctly"):
                 self.hub.ingest_spoke_trace(
                     "05", env.envelope_id,
                     thought="photo deliverable received but not verified "
