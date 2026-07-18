@@ -287,6 +287,27 @@ class Spoke04ListingDescription:
                     "cut_for_length": was_cut}
             self.drafts[ctx] = draft
 
+            # Tuple 6 second half, unclosed since the 2026-07-17 review
+            # named it: "note the discrepancy to HUMAN" - notes used to
+            # ride only inside the draft payload, reaching 17 and nobody
+            # else. Now every note goes in the books (14 -> P16/P17
+            # visibility), and a source-conflict note additionally lands
+            # on the human queue - two authorities disagreeing about a
+            # published number is a human's call to reconcile, not a
+            # payload field's.
+            if notes:
+                self.hub.send(_env("04", "14", "interaction.log", ctx,
+                                   {"kind": "drafting_notes",
+                                    "notes": notes}))
+                discrepancies = [n for n in notes if "discrepancy" in n]
+                if discrepancies:
+                    self.hub.send(_env("04", "queue", "clarification.request",
+                                       ctx, {"reason": "source discrepancy "
+                                                       "in published listing "
+                                                       "data - human "
+                                                       "reconciliation",
+                                            "notes": discrepancies}))
+
             self.hub.ingest_spoke_trace(
                 "04", env.envelope_id,
                 thought=f"draft built from supplied data only - "
@@ -304,6 +325,19 @@ class Spoke04ListingDescription:
             verdict = env.payload.get("verdict")
             draft = self.drafts.get(ctx)
             if verdict == "approved":
+                if draft is None:
+                    # duplicate/stray approval - the draft already
+                    # released and was cleared; re-releasing stale
+                    # content on a replayed verdict is how an old asset
+                    # resurrects itself. Logged, nothing sent.
+                    self.hub.ingest_spoke_trace(
+                        "04", env.envelope_id,
+                        thought=f"approved verdict for ctx={ctx!r} with no "
+                                f"stored draft (already released or never "
+                                f"drafted) - releasing nothing",
+                        result="ignored: no_stored_draft")
+                    return
+                self.drafts.pop(ctx, None)
                 self.hub.send(_env("04", "18", "agent.status", ctx,
                                    {"waiting_on": "compliance_review",
                                     "resolved": True}))
@@ -328,18 +362,48 @@ class Spoke04ListingDescription:
                 # itself - exactly, no negotiation (tuple 10) - by removing
                 # the specific cited phrase, not by receiving a "remove
                 # this" instruction from 17.
+                if draft is None:
+                    # A verdict with no stored draft (replay, duplicate,
+                    # unknown ctx) has nothing to correct - resubmitting
+                    # None as a draft would launder an empty asset
+                    # through a clean approval. Hold it, named.
+                    self.hub.send(_env("04", "queue", "clarification.request",
+                                       ctx, {"reason": "content.verdict for "
+                                                       "a context with no "
+                                                       "stored draft - "
+                                                       "nothing to correct, "
+                                                       "nothing resubmitted"}))
+                    return
                 findings = env.payload.get("findings", [])
+                # Fresh-eyes finding B (2026-07-18): 'phrase in text' with
+                # a MISSING phrase was '"" in text' == True for every
+                # fact - one phrase-less finding emptied the whole draft,
+                # the empty draft resubmitted, 17 approved the nothing,
+                # and an EMPTY listing description released to MLS and
+                # marketing. A finding without a citable phrase cannot be
+                # applied "exactly" (tuple 10's own word) - it holds for
+                # a human instead of guessing at scope.
+                uncitable = [f for f in findings if not f.get("phrase")]
+                if uncitable:
+                    self.hub.send(_env("04", "queue", "clarification.request",
+                                       ctx, {"reason": "compliance finding "
+                                                       "carries no citable "
+                                                       "phrase - cannot "
+                                                       "apply a fix "
+                                                       "'exactly', holding "
+                                                       "for human",
+                                            "findings": uncitable}))
+                    return
                 removed = []
-                if draft:
-                    remaining = []
-                    for f in draft["facts"]:
-                        cited = any(finding.get("phrase", "") in f["text"]
-                                   for finding in findings)
-                        if cited:
-                            removed.append(f["text"])
-                        else:
-                            remaining.append(f)
-                    draft["facts"] = remaining
+                remaining = []
+                for f in draft["facts"]:
+                    cited = any(finding["phrase"] in f["text"]
+                               for finding in findings)
+                    if cited:
+                        removed.append(f["text"])
+                    else:
+                        remaining.append(f)
+                draft["facts"] = remaining
                 self.hub.ingest_spoke_trace(
                     "04", env.envelope_id,
                     thought=f"compliance flagged {len(findings)} finding(s) "

@@ -40,9 +40,20 @@ def main() -> int:
                     help="path to a dispatcher-agents checkout")
     ap.add_argument("--check", action="store_true",
                     help="report drift and exit 1; change nothing")
+    ap.add_argument("--target", default=None,
+                    help="identity repo to sync INTO (default: this "
+                         "script's own repo)")
     args = ap.parse_args()
 
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Fixed 2026-07-18, caught in the act: this resolved the target from
+    # __file__, so invoking listing-agents' copy from inside ANOTHER
+    # identity repo silently checked listing-agents against core and
+    # reported THAT as the other repo's status - a drift checker that
+    # checks the wrong repo and says "clean" is worse than no checker.
+    # Target is now explicit, and the tool PRINTS what it compared so a
+    # wrong invocation is visible in the output, not just the exit code.
+    here = os.path.abspath(args.target) if args.target else         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(f"comparing target={here} against core={os.path.abspath(args.core)}")
     src_dir = os.path.join(os.path.abspath(args.core), "dispatcher")
     dst_dir = os.path.join(here, "dispatcher")
     if not os.path.isdir(src_dir):

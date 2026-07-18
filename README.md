@@ -26,6 +26,10 @@ production deployment should run fully armed. Do not vendor or copy the
 pillar code into this repo; import-from-package is the anti-drift
 mechanism.
 
+New to this repo? `docs/START_HERE.md` is the 60-second version;
+`docs/PLAY-BY-PLAY.md` narrates what actually happens, step by step, in
+every playbook.
+
 ## Layout
 
 - `dispatcher/` - vendored dispatcher-agents core (hub, core, pillars,

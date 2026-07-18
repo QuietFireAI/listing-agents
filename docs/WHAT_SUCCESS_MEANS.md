@@ -1,324 +1,218 @@
 # WHAT_SUCCESS_MEANS.md
 
-What each playbook delivers when it completes, what human work it
-displaces, and what the human still owns. Written against each
-playbook's ratified completion criteria — success here means the
-criteria the swarm actually verifies, never a marketing paraphrase of
-them.
+## The question this document answers
 
-**A note on numbers, stated once so it never has to be hedged again:**
-this document names the tasks the swarm takes off a human's plate. It
-does not quote hours-saved figures for this swarm, because no
-deployment has produced that data yet. When after-action reports from
-live use exist, measured figures replace the task descriptions below.
-A confident-looking number without a basis is a fabrication — the same
-rule the agents themselves run on.
+Every other document in this repository answers some version of "is it
+correct?" This one answers the question a broker actually asks: when
+this swarm runs, what do I get, what stops eating my time, and what do
+I still control? The answers below are written against each playbook's
+ratified completion criteria — the conditions the swarm actually
+verifies before calling anything done. Where the criteria themselves
+are the point, they're quoted, because phrases like "live-verified" and
+"zero touches against opt-out flags, verifiable from the CRM's own
+records" aren't marketing language. They're test assertions.
 
-## Third-party context (attributed industry research — not measurements of this swarm)
+One commitment, made once so it never has to be hedged again: this
+document quotes no hours-saved figures for this software, because no
+deployment has produced that data yet. It names the tasks that come
+off your plate — concretely enough that you can price your own hours
+against them — and when after-action data from live use exists,
+measured figures will replace the task descriptions. A
+confident-looking number without a basis is a fabrication, and the
+agents themselves are built to refuse exactly that. This document
+holds itself to the same rule.
 
-The following published figures explain why specific playbooks target
-what they target. They are third-party research about the industry,
-clearly attributed, and they describe the size of the problems — not
-the performance of this software.
+Where published industry research explains why a playbook targets what
+it targets, it's cited, clearly attributed, describing the size of the
+problem — never the performance of this software. Three pieces of
+context carry most of the weight. The 2007 MIT/InsideSales.com Lead
+Response Management study — six companies, fifteen thousand leads,
+over a hundred thousand call attempts — found the odds of reaching a
+web lead are roughly one hundred times higher when contact is attempted
+within five minutes rather than thirty, and the odds of qualifying that
+lead roughly twenty-one times higher, with immediacy of response
+overshadowing both time of day and day of week. NAR's 2025 Profile of
+Home Buyers and Sellers reports that sixty-six percent of sellers found
+their agent through a referral or a past relationship, that roughly
+nine in ten clients say they would use or recommend their agent again,
+and that reputation is the single biggest factor in how sellers choose
+an agent. And the TCPA — 47 U.S.C. § 227 — sets statutory damages of
+five hundred dollars per call or text, trebled to fifteen hundred for
+willful or knowing violations, uncapped, with each message a separate
+violation and no proof of actual harm required. Keep those three in
+mind as you read: the five-minute SLA, the follow-up machinery, and
+the consent architecture below aren't design preferences. They're
+responses to the industry's own arithmetic.
 
-- **Speed to lead (why P11's SLA defaults to 5 minutes):** the 2007
-  MIT/InsideSales.com Lead Response Management study (six companies,
-  15,000+ leads, 100,000+ call attempts) found the odds of making
-  contact with a web lead are roughly **100x higher when attempted
-  within 5 minutes versus 30 minutes**, and the odds of qualifying the
-  lead roughly **21x higher** — with immediacy of response
-  overshadowing both time of day and day of week. A 2011 Harvard
-  Business Review study ("The Short Life of Online Sales Leads,"
-  Oldroyd et al., 2,241 audited U.S. firms) found the **average
-  first-response time was 42 hours and 23% of firms never responded at
-  all**, while firms responding within an hour were roughly **7x more
-  likely to qualify** the lead. These two studies are routinely
-  conflated; the 100x/21x figures are MIT/InsideSales, the 42-hour
-  average is HBR. P11's value proposition is exactly this gap: the SLA
-  that holds at 9pm and mid-showing.
-- **Referral economics (why P10, P13, and P16-P18 exist at all):**
-  NAR's 2025 Profile of Home Buyers and Sellers reports **66% of
-  sellers found their agent through a referral or used an agent they'd
-  worked with before**, around **90% of clients say they would use or
-  recommend their agent again**, and reputation is the single most
-  important factor in seller agent selection (35%). The follow-up
-  program that P10 schedules and P13 executes is the mechanism that
-  converts that stated willingness into the referral pipeline the
-  industry's own data says the business runs on.
-- **Consent economics (why 01 captures consent at first contact and
-  03/11/13 enforce it structurally):** the TCPA (47 U.S.C. § 227)
-  provides statutory damages of **$500 per call or text, trebled to
-  $1,500 for willful or knowing violations, with no cap** — and each
-  message is a separate violation, no proof of actual harm required.
-  A single drip sequence sent past a revoked consent is not one
-  mistake; it is a per-message liability. This is why "zero touches
-  against opt-out flags — verifiable from 14's records" appears in
-  ratified completion criteria rather than in a training manual.
+## The listing, from signature to sold sign
 
-**The one sentence that covers everything:** the swarm does the
-coordination, chasing, logging, drafting, and vigilance; the human
-keeps every fiduciary decision (price, offers, legal questions), every
-signature, and every judgment call the tuples route to them. Nothing
-ships to a client, a platform, or the MLS without either a compliance
-verdict, a signed authorization, or both.
+Success in **P01, new listing onboarding**, is a live, marketed,
+fair-housing-reviewed listing — MLS entry live-verified, syndication
+live-verified, campaign published only after a compliance verdict,
+seller informed, every step acknowledged and logged. The phrase
+"live-verified" is doing real work there: the swarm never treats "we
+sent it to the MLS" as "it's on the MLS." It checks. What comes off
+your plate is the entire go-to-market chain — ordering and chasing the
+photographer, moving verified photos into the system, writing listing
+copy that survives a fair-housing screen, entering the listing,
+confirming it actually appears, launching the ads, telling the seller.
+One signed envelope in, a live listing out. What never leaves your
+hands: the list price, which is decided before the playbook starts and
+touched by no step of it, and anything compliance flags, which stops
+and waits for you.
 
----
+When the price changes — **P02** — you decide the number and the swarm
+makes it true everywhere at once: MLS, portals, refreshed marketing
+that no longer quotes the old figure, seller confirmation. The
+error-prone fan-out after a price decision — the portal that didn't
+take, the ad still showing last month's number — is what disappears.
+If you want data first, the market agent delivers a comp package with
+a source and retrieval date on every figure and, structurally, no
+opinion field. There is no lane in the system by which the swarm can
+produce or suggest a price. That's not a policy; it's an absence of
+wiring. **P23, price review evidence**, is the same principle as a
+standing service: comparable and absorption evidence, your listing's
+actual activity, financial context on request — each delivered and
+verified on the log, your decision recorded, and no number anywhere
+that you didn't write.
 
-## The listing lifecycle
+Under contract — **P03** — success is a pending status live-verified,
+the full deadline map loaded and dated, the initial document chases
+opened, and your client told what happens next. The status change
+itself is artifact-gated: the swarm will not mark a listing pending
+without the executed contract on file, verified to open. From there
+**P09, contract to close**, runs the vigilance that otherwise consumes
+a transaction coordinator or your evenings. Every deadline is tracked
+and enforced under a rule the industry mostly honors in the breach: a
+milestone is not done until its artifact is on file. Documents are
+chased on a capped cadence that escalates to you instead of nagging
+forever. Vendors are booked from your approved roster with their
+credentials checked. A deadline that passes unsatisfied alerts as
+overdue rather than going quiet, and a financing contingency date
+passing with no removal on file is never assumed waived — it reaches
+you the same hour as a legal-line event. The measure of this
+playbook's success is the absence of surprises, and the settlement
+figures pass into your books verbatim from the settlement statement,
+never re-typed, never approximated.
 
-### P01 — New Listing Onboarding
-**Success:** MLS entry live-verified, syndication live-verified,
-marketing campaign published *after* a compliance verdict, seller
-informed, every step acked and logged. Verified live, not push-logged —
-"we sent it" never counts as "it's up."
-**Deliverables:** a live, marketed, fair-housing-reviewed listing:
-MLS entry, portal syndication, description/captions/flyer/tour script,
-launched campaign, seller notification, vendor bookings (photography),
-calendar blocks, and a complete audit trail from signed agreement to
-go-live.
-**Human work displaced:** the entire go-to-market coordination chain —
-ordering and chasing the photographer, moving photos to the MLS,
-writing compliant listing copy, submitting it for review, entering the
-listing, checking it actually appears on portals, launching ads,
-telling the seller. One signed envelope in; a live listing out.
-**The human still owns:** the list price (made before the playbook
-starts, untouched by every step), the signed authorization, and any
-flagged content.
+The close itself — **P10** — arms three things the moment it happens,
+without anyone remembering to do them. The 30/90/365 check-in program
+that famously never happens when it depends on memory gets scheduled
+by the clock layer and consent-checked before each touch. The
+commission reconciliation opens against an independent record of the
+same close, so a mismatch surfaces instead of hiding. And the CRM
+flips to past-client with anniversary triggers armed. Recall the NAR
+figure: two-thirds of sellers come from referrals and past
+relationships. P10 is where that pipeline gets built, on schedule,
+while you're at the next closing.
 
-### P02 — Price Adjustment
-**Success:** new price live-verified on MLS and syndication, downstream
-acks on file, seller informed.
-**Deliverables:** consistent price everywhere at once — MLS, portals,
-refreshed marketing assets (re-reviewed by compliance), seller
-confirmation.
-**Human work displaced:** the error-prone fan-out after a price
-decision: updating every surface, catching the portal that didn't take,
-rewriting assets that quote the old number.
-**The human still owns:** the price decision itself. The swarm never
-produces or suggests a number (see P23 for how it supports the
-decision).
+And when a listing ends without a sale — **P05** — success is defined
+by absence: status flipped, and zero active marketing, verified per
+platform. An ad still running for a withdrawn listing is a compliance
+exposure and a wound to the seller relationship, so the wind-down
+doesn't report "halt requested"; it verifies the halt happened,
+everywhere. The seller hears from you in your words, the record is
+annotated, and if they relist, they come back through the front door —
+nobody auto-enrolls a former client into anything.
 
-### P03 — Under-Contract Transition
-**Success:** pending status live-verified, full deadline timeline
-loaded and dated, initial document requests acked, client informed.
-**Deliverables:** a dated deadline map (inspection, appraisal,
-financing, closing) that Agent 07 then enforces, opened document-chase
-threads, status consistency across platforms.
-**Human work displaced:** building the transaction calendar by hand and
-remembering to start every paper chase on day one.
+## Buyers, tours, and matches
 
-### P08 — Offer to Acceptance
-**Success:** the offer resolved — accepted (hands off to P03), rejected,
-or expired — with every status transition and artifact on file.
-**Deliverables:** a clean offer record with nothing verbal: every state
-change backed by an artifact.
-**Human work displaced:** offer status bookkeeping and the "what did we
-ever hear back on that one" archaeology.
-**The human still owns:** the negotiation and the accept/reject/counter
-decision — every one of them, every time.
+**P06, buyer onboarding**, will not start without the signed buyer
+agreement on file — verified against the system of record before any
+tour can be requested, because post-settlement that's the law, and
+here it's a gate rather than a habit. The buyer's criteria are
+recorded verbatim, marked as their own words, never an inference, and
+matches flow from day one. **P07, tour day**, replaces the
+phone-and-spreadsheet choreography of sequencing five showings across
+five listing agents: buffer-enforced slots, notice rules respected,
+confirmations to every party, feedback captured afterward — asked for
+twice at most, never a third time — and the buyer's profile updated
+only from what the buyer explicitly said. Enthusiasm in the kitchen is
+not a criteria change. **P22** closes the feedback loop the same day
+instead of at the next check-in call: feedback logged, criteria delta
+recorded, a refreshed and compliance-cleared match set out the door.
+**P04, the open house**, turns the sign-in sheet that used to die in a
+drawer into a tiered pipeline by dinner — every walk-in captured with
+consent recorded on the spot, deduplicated, scored, and a hot one on
+your phone inside the SLA while they're still in the driveway.
 
-### P09 — Contract to Close
-**Success:** every deadline satisfied-by-artifact or explicitly
-human-resolved, closing executed by the human, `transaction.closed`
-acked by CRM, finance, and after-close.
-**Deliverables:** deadline enforcement with proof (a milestone isn't
-"done" until the artifact is on file), vendor holdup escalation,
-settlement figures passed verbatim into the books, and the close
-fan-out that arms P10.
-**Human work displaced:** transaction coordination — the daily "is the
-appraisal back? did the lender confirm? who's chasing the survey?"
-vigilance that otherwise consumes a coordinator or the agent's own
-evenings. This is the playbook where missed-deadline risk lives, and
-its success measure is the absence of surprises.
+## The lead machine
 
-### P10 — Close & Post-Close Handoff
-**Success:** the after-close program scheduled (30/90/365 check-ins),
-the financial reconciliation record open, CRM in past-client state,
-just-sold marketing either published post-verdict or explicitly skipped.
-**Deliverables:** the transition from transaction to relationship,
-armed automatically at close instead of "when someone remembers."
-**Human work displaced:** the follow-up program that famously never
-happens — the check-ins that produce referrals, scheduled by the clock
-layer, not by memory.
+**P11, speed to lead**, exists because of the MIT arithmetic above,
+and its success criteria read accordingly: every inbound lead captured
+with its consent state recorded at first contact, deduplicated before
+it can double-count your pipeline, tiered against your own signed
+rubric with the rubric version stamped on the decision, and — if it's
+hot — escalated to you inside a five-minute SLA with the clock
+attached. The swarm's entire ambition with a hot lead is to get it to
+you fast; it never speaks to one for you. The SLA is the value
+precisely because it holds at nine at night and mid-showing, when
+you're the bottleneck through no fault of your own.
 
-### P05 — Expired/Withdrawn Wind-down
-**Success:** status live-verified, **zero active marketing verified per
-platform**, seller informed, record annotated, human disposition logged.
-**Deliverables:** a clean stop. Marketing for a dead listing is a
-compliance exposure and a seller-relationship wound; success is
-verified absence, per platform.
-**Human work displaced:** hunting down every ad, post, and syndication
-of a listing that must stop being marketed today.
+The supporting cast keeps the pipeline honest. **P21** re-scores every
+lead on cadence and ends only when each one is either re-tiered with a
+logged decision or explicitly marked no-change — "no lead left in an
+unknown state" is the completion criterion, verbatim. **P13** works
+the long cycle — birthdays, anniversaries, holidays — as a system with
+a negative guarantee at its center: zero touches against opt-out
+flags, verifiable from the CRM's own records. Given the TCPA's
+per-message arithmetic, that guarantee is not etiquette; it's exposure
+control. **P24, prospecting**, surfaces expired and FSBO opportunities
+from your configured sources only, applies DNC and representation
+rules before you ever see a name, and — in probation — contacts no
+one, ever. Discovery is the swarm's job. Outreach is yours. **P12**
+runs the geographic farm with the same discipline: campaigns to
+general geography only, audience parameters provably never derived
+from identified owner records, demographic targeting refused outright
+rather than worked around.
 
----
+## The office that runs itself honestly
 
-## The buyer side
+**P16, morning operations**, replaces the check-six-systems ritual
+with one brief: calendar and deadlines, overnight leads, market
+movement with provenance on every datum, ranked prospect suggestions
+with their reasoning attached, and your pipeline's numbers — assembled
+in parallel, presented for your review, nothing acted on. **P17, the
+end-of-day books**, closes the loop with a dated, hashed record that
+makes "what happened yesterday" a lookup — and it's honest about
+itself: activity that exists in system state without log entries is
+named as a logging gap, never smoothed over. **P18** produces the
+weekly seller report — the document sellers judge their agent by and
+agents dread compiling — assembled from what actually happened,
+compliance-screened, and sent only on your approval, with next week's
+already scheduled.
 
-### P06 — New Buyer Onboarding
-**Success:** verified buyer agreement on file, profile live with the
-buyer's criteria recorded verbatim, first matches delivered, consent
-enforced.
-**Deliverables:** a working buyer profile that produces matches from
-day one — with the agreement verified before any showing can be
-requested (a structural rule, not a habit).
-**Human work displaced:** intake paperwork sequencing and the first
-manual portal searches.
+Two playbooks stand watch. **P19** runs property access as a ledger —
+who holds what, until when, expiries flagged — with one absolute: the
+secret itself never rides a message. No lockbox code appears in any
+payload, ever; people are routed to your custody protocol instead.
+**P20** watches vacant properties, the riskiest asset class you touch,
+with a completion rule that has teeth: a walkthrough without a proof
+artifact did not happen. The claim releases nothing; the artifact
+does.
 
-### P07 — Tour Day Coordination
-**Success:** all tours executed or explicitly cancelled, confirmations
-and feedback logged, buyer profile updated **only from explicit
-statements** — never from inferred enthusiasm.
-**Deliverables:** a sequenced tour day (buffer-enforced, notice-rule
-compliant), confirmations, captured feedback.
-**Human work displaced:** the phone-and-spreadsheet choreography of
-lining up five showings with five listing agents in one afternoon.
+And when something goes wrong in public — **P14** — success is
+measured in the speed and completeness of containment. The complaint
+reaches you verbatim, at priority if it's spreading, and in the same
+motion every scheduled touch to that client freezes, so no drip email
+lands mid-dispute. The swarm can attach a labeled draft for your
+review if the venue is public, but the response, the channel, and the
+resolution are yours, and the hold releases only on your word. The
+swarm's success in a complaint is never its own words in public.
 
-### P22 — Buyer Feedback Match Refresh
-**Success:** feedback logged, criteria delta recorded, a refreshed
-compliance-cleared match set produced, buyer informed, next showings
-requested or explicitly declined.
-**Deliverables:** the feedback→criteria→new-matches loop closed the
-same day instead of at the next check-in call.
+## The four properties underneath all of it
 
----
-
-## Lead flow
-
-### P11 — Speed to Lead
-**Success (per lead):** captured with consent state, deduped against
-CRM, tiered with the rubric version recorded, routed, logged — inside
-the configured SLA.
-**Deliverables:** every inbound lead answered by process, not by
-whoever's free: consent captured at first contact (TCPA exposure is
-liability, not paperwork), duplicates caught before they double-count
-the pipeline, hot leads escalated to a human inside a 5-minute SLA.
-**Human work displaced:** being the bottleneck on inbound. The
-industry's own speed-to-lead data is why the SLA default is 5 minutes;
-the swarm's value is that the SLA holds at 9pm and mid-showing too.
-**The human still owns:** every hot lead — the swarm's success is
-getting it to them fast, never talking to it for them.
-
-### P21 — Lead Rescore Cycle
-**Success:** every lead in the cycle either re-scored with a logged
-tier decision or explicitly recorded "no change / no data." **No lead
-left in an unknown state.**
-**Deliverables:** a pipeline whose tiers mean something this week, not
-last quarter.
-**Human work displaced:** the periodic pipeline scrub nobody does.
-
-### P13 — Referral & Anniversary Cycle
-**Success (per trigger):** touch sent (or held with a logged reason),
-responses tiered into intake, **zero touches against opt-out flags —
-verifiable from the CRM's own records.**
-**Deliverables:** birthdays, anniversaries, and holidays worked as a
-system. Long-cycle referral business without long-cycle memory.
-
-### P24 — Prospecting Outreach
-**Success (per run):** every surfaced prospect human-validated
-(approved/rejected, logged) or dropped on a suppression record; **in
-probation, zero autonomous outreach occurred.**
-**Deliverables:** a validated prospect list with compliance gates
-(expired/FSBO rules, DNC suppression, aggregate-only farm data) applied
-before a human ever sees a name.
-**The human still owns:** all actual outreach. Discovery is the swarm's
-job; contact is not.
-
-### P12 — Geographic Farm Campaign
-**Success:** campaign published post-verdict to *general geography*,
-responders entering standard intake, **zero targeting derived from
-opportunity records — verifiable by audience-parameter logs.**
-**Deliverables:** farm marketing with fair-housing discipline built into
-the audience parameters, provably.
-
----
-
-## Operations & vigilance
-
-### P16 — Morning Operations
-**Success:** the human has the brief; their verdicts (act / park /
-discard) recorded.
-**Deliverables:** one morning brief replacing the check-six-systems
-ritual: overnight leads, today's deadlines, open waits, calendar
-conflicts, anything held for review.
-
-### P17 — End-of-Day Books
-**Success:** a dated, hashed books object on the log; tomorrow's P16
-precondition satisfied.
-**Deliverables:** a daily close that makes "what happened yesterday" a
-lookup, not a reconstruction — and makes gaps visible (the report names
-logging gaps rather than smoothing over them).
-
-### P18 — Seller Weekly Report
-**Success:** send logged with approval reference, next cadence
-scheduled.
-**Deliverables:** the weekly seller update — showings, feedback,
-activity — that sellers judge their agent by and agents dread
-compiling. Approved before sending, every week, automatically
-rescheduled.
-
-### P19 — Property Access Custody
-**Success:** the access register reconciled — every outstanding grant
-inside its window, every expiry scheduled.
-**Deliverables:** who can get into which property, until when, with
-expiry enforced. Key custody as a ledger instead of a memory.
-
-### P20 — Vacant Property Watch
-**Success:** continuous until vacancy ends; each cadence cycle completes
-**with proof artifacts on the log** — a check without an artifact
-didn't happen.
-**Deliverables:** documented vigilance over the highest-risk asset class
-an agent touches.
-
-### P14 — Complaint Response
-**Success:** human resolution logged, holds released only by human
-direction, context annotated; if public, **the human's response posted
-by the human.**
-**Deliverables:** immediate containment — outbound touches to the
-complainant held, the thread escalated with the verbatim complaint —
-with zero autonomous damage control. The swarm's success in a
-complaint is speed of escalation and completeness of the hold, never
-its own words in public.
-
----
-
-## Decision support (the swarm informs, the human decides)
-
-### P15 — CMA / Listing Appointment Prep
-**Success:** market and property packages delivered **with full
-provenance** and staleness inside threshold, thin data reported as
-thin, prep time blocked on the calendar.
-**Deliverables:** appointment-ready comp data where every number traces
-to a source and a retrieval date — and a five-comp set that's really
-three gets called three.
-**The human still owns:** the CMA's conclusion and the pitch.
-
-### P23 — Price Review Evidence
-**Success:** a market package, an activity summary, and requested
-financial context delivered, each verified on the log, the human's
-decision recorded. **No number produced by the swarm.**
-**Deliverables:** everything a price decision needs, nothing that
-pretends to be the decision.
-
----
-
-## What success means at the swarm level
-
-Every playbook above shares four properties, and they are the actual
-product:
-
-1. **Completion is verified, never claimed.** Live-checks over push
-   logs, artifacts over assurances, "anything unverified = reported as
-   not complete" — the phrase appears in the ratified criteria because
-   it is the criteria.
-2. **The audit trail is the deliverable under the deliverable.** Every
-   envelope acked and hash-chain-logged means every listing, lead, and
-   deadline has a provable history — for the broker, for compliance,
-   for the E&O carrier.
-3. **The human's judgment is structurally protected, not politely
-   deferred to.** Prices, offers, legal questions, and flagged content
-   don't reach clients because no route exists for them to — the track
-   is closed.
-4. **The failure mode is a named hold, never a silent drop.** When a
-   playbook can't complete, success is that someone knows, with a
-   reason, on a queue — which is itself the value: the absence of the
-   quiet failures that cost listings and clients.
+Read back through any playbook above and the same four properties
+appear, because they are the actual product. Completion is verified,
+never claimed — live-checks over push logs, artifacts over assurances,
+anything unverified reported as not complete. The audit trail is the
+deliverable under every deliverable: every message acknowledged and
+hash-chain-logged means every listing, lead, and deadline carries a
+provable history — for you, for your broker, for compliance, for the
+E&O carrier. Your judgment is structurally protected rather than
+politely deferred to: prices, offers, legal questions, and flagged
+content cannot reach a client, because no route exists for them to
+travel. And the failure mode, everywhere, is a named hold rather than
+a silent drop — when a playbook can't complete, someone knows, with a
+reason, on a queue. Ask what the quiet failures have cost you over a
+career, and that last property may be the one that matters most.

@@ -225,3 +225,68 @@ def test_photo_data_agreement_does_not_halt(tmp_path):
         "beds": 3, "features": ["garage"],
         "photo_detected_features": ["garage"]}))
     assert "pd-2" in spoke.drafts
+
+
+# ------- fresh-eyes re-audit fixes (2026-07-18)
+def test_phraseless_finding_never_empties_the_draft(tmp_path):
+    """A finding without a phrase used to match EVERY fact ('' in text),
+    empty the draft, and launder a blank listing through a clean
+    approval. Now it holds for a human."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke04ListingDescription(hub)
+    captured = []
+    hub.register("17", lambda env: captured.append(env))
+    hub.register("18", lambda env: None)
+    hub.register("14", lambda env: None)
+    hub.on_turn_start()
+    hub.send(listing_data("pf-1", {"beds": 3, "features": ["garage"]}))
+    assert spoke.drafts["pf-1"]["facts"]
+    hub.send(Envelope(from_agent="17", to_agent="04", intent="content.verdict",
+                      client_context_id="pf-1",
+                      payload={"verdict": "flagged",
+                               "findings": [{"rule_id": "FH-9"}]},  # no phrase
+                      provenance={"source": "spoke-17", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert spoke.drafts["pf-1"]["facts"], "draft must NOT be emptied"
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("no citable phrase" in r for r in reasons)
+
+
+def test_duplicate_approval_never_rereleases(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke04ListingDescription(hub)
+    hub.register("17", lambda env: None)
+    hub.register("18", lambda env: None)
+    hub.register("14", lambda env: None)
+    releases = []
+    hub.register("12", lambda env: releases.append(env))
+    hub.register("05", lambda env: None)
+    hub.on_turn_start()
+    hub.send(listing_data("dup-1", {"beds": 2, "features": ["deck"]}))
+    approve = lambda: hub.send(Envelope(
+        from_agent="17", to_agent="04", intent="content.verdict",
+        client_context_id="dup-1", payload={"verdict": "approved"},
+        provenance={"source": "spoke-17", "captured_at": "runtime",
+                    "verbatim_available": True}))
+    approve()
+    assert len(releases) == 1
+    approve()  # stray duplicate
+    assert len(releases) == 1, "a replayed verdict must never re-release"
+
+
+def test_sqft_discrepancy_reaches_a_human_channel(tmp_path):
+    """Tuple 6's second half, unclosed since the 07-17 review named it:
+    'note the discrepancy to human' - the note used to ride only inside
+    the draft payload."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke04ListingDescription(hub)
+    hub.register("17", lambda env: None)
+    hub.register("18", lambda env: None)
+    hub.register("14", lambda env: None)
+    hub.on_turn_start()
+    hub.send(listing_data("sq-1", {"sqft_tax_record": 2000,
+                                   "sqft_seller_claim": 2400}))
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("source discrepancy" in r for r in reasons)
