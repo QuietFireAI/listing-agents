@@ -30,6 +30,29 @@ them inline.
 
 ---
 
+## TOP OF LIST — Deliberate placeholders & unratified configs (read before deployment)
+
+Full stub sweep 2026-07-18: every placeholder in the codebase is listed
+here. Nothing else is stubbed, faked, or silently defaulted. If it's not
+in this table it's real, wired code.
+
+| Item | Where | Status | What blocks / what to do |
+|---|---|---|---|
+| Twilio credentials | `dispatcher/notifier.py` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` env vars) | **PLACEHOLDER — declared** | Real Twilio implementation; with placeholder creds every send fails with a genuine 401, never a fake success. Set both env vars for production. |
+| SMS destination | `dispatcher/notifier.py` (`+1-555-555-0100`) | **PLACEHOLDER — declared** | NANP reserved-for-fiction block, cannot reach a real phone. Replace with the operator's number at deployment. |
+| `loop_threshold=20` | core `dispatcher/hub.py` | **RATIFIED as deliberate placeholder (owner, 2026-07-17)** | No empirical basis existed to pick a better number; revisit after production traffic. |
+| MANNERS `N=10` | core `dispatcher/hub.py` | **RATIFIED as deliberate placeholder (owner, 2026-07-17)** | Same: deliberate, revisit with real data. |
+| `config/authority_signers.json` | both repos | **UNRATIFIED — fails closed** | Genuinely empty template; needs your actual IdP logins. Loader refuses to arm while the `_status` UNRATIFIED line stands. No signing authority exists until you edit, date, and sign off. |
+| `config/vendor_panel.json` | both repos | **UNRATIFIED — fails closed** | Genuinely empty template; needs your actual vendor relationships. Same fail-closed rule. |
+| External adapters (`vendor.schedule`, `client.message.send`, `campaign.publish`) | seam contracts in INTEGRATIONS.md | **SEAM-COMPLETE, NOT WIRED** | Tracked in the adapter table below until connected to real providers. |
+| `approved_by: <owner name/date>` fields | `config/message_templates.json` (both repos) | **UNRATIFIED — awaiting owner sign-off** | Drafted template bodies are proposals; fill in name/date per template to ratify the wording. |
+
+Ratification path for the config files: review content → edit → change
+`_status` to `RATIFIED` with date + sign-off → load. Fail-closed until
+then is the invariant, not an inconvenience.
+
+---
+
 ## Ratified (owner-approved 2026-07-16)
 
 | Agent | Parameter | Value | Controls |
