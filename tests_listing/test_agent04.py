@@ -194,3 +194,34 @@ def test_agent_status_wired_for_compliance_review_wait(tmp_path):
     status2 = [e for e in hub.audit.read() if e["kind"] == "envelope.persisted"
               and e["intent"] == "agent.status"]
     assert any(s["payload"].get("resolved") for s in status2)
+
+
+# ---- tuple 1 detection is real now (owner decision #4, 2026-07-17)
+def test_photo_data_contradiction_detected_by_comparison_not_caller_flag(tmp_path):
+    """The feature-set comparison used to sit computed-but-unused next to
+    a caller-supplied flag - detection never actually ran. Now the
+    symmetric difference halts on its own."""
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke04ListingDescription(hub)
+    hub.register("17", lambda env: None)
+    hub.register("18", lambda env: None)
+    hub.on_turn_start()
+    hub.send(listing_data("pd-1", {
+        "beds": 3, "features": ["pool", "garage"],
+        "photo_detected_features": ["garage", "solar panels"]}))
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("photos contradict data sheet" in r for r in reasons)
+    assert "pd-1" not in spoke.drafts, "halted asset must not draft"
+
+
+def test_photo_data_agreement_does_not_halt(tmp_path):
+    hub = make_hub(str(tmp_path))
+    spoke = Spoke04ListingDescription(hub)
+    hub.register("17", lambda env: None)
+    hub.register("18", lambda env: None)
+    hub.on_turn_start()
+    hub.send(listing_data("pd-2", {
+        "beds": 3, "features": ["garage"],
+        "photo_detected_features": ["garage"]}))
+    assert "pd-2" in spoke.drafts

@@ -360,6 +360,14 @@ class Spoke08DocumentCollection:
         if doc_type == "title_commitment" and payload.get("exception_found"):
             status_payload["exception_found"] = True
             status_payload["exception_text"] = payload.get("exception_text")
+        if doc_type == "closing_settlement_statement":
+            # Owner decision 2026-07-17: the settlement statement is the
+            # one artifact that actually carries the money figures - pass
+            # them through VERBATIM (never derived, never defaulted) so
+            # 07's transaction.closed fan-out can hand 15 real numbers.
+            status_payload["sale_price"] = payload.get("sale_price")
+            status_payload["commission_amount"] = payload.get("commission_amount")
+            status_payload["signed_docs_only"] = payload.get("signed", False)
         if doc_type == "earnest_money_receipt":
             # Fail closed: doctrine says "money milestones never get
             # benefit of the doubt" - defaulting to True did exactly that

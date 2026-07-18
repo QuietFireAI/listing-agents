@@ -216,13 +216,13 @@ def test_showing_outside_buffer_window_is_not_a_conflict(tmp_path):
 
 
 # ------------------------------------- THE FIX: protected deadline bump
-def test_protected_deadline_bumps_and_notifies_the_displaced_showing(tmp_path):
-    """'Protected deadline wins' was implemented as 'ignore the conflict
-    check and schedule anyway' - both showings ended up marked confirmed
-    in state, and the bumped party got no cancellation, no notification,
-    nothing. A real double-booking, contradicting this same tuple's own
-    'never double-book and hope'."""
-    hub, _ = make_hub(str(tmp_path))
+def test_protected_deadline_claim_holds_for_human_and_bumps_only_on_confirm(tmp_path):
+    """Owner decision 2026-07-17: protected_deadline is a caller-writable
+    payload flag - any requester claiming it used to auto-bump confirmed
+    showings. Now the claim HOLDS for human confirmation; the bump (with
+    displaced-party notice) executes only on the human's signed
+    config.update confirm_protected_bump."""
+    hub, signer = make_hub(str(tmp_path))
     spoke = Spoke06ShowingScheduler(hub)
     hub.on_turn_start()
     ctx = "s-022"
@@ -231,18 +231,29 @@ def test_protected_deadline_bumps_and_notifies_the_displaced_showing(tmp_path):
 
     hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00",
                                            protected_deadline=True)))
-    # the original showing must be gone, not sitting alongside the new one
-    times = [s["time"] for s in spoke.confirmed_showings[ctx]]
-    assert times == ["2026-08-01T10:00"]
-    assert len(spoke.confirmed_showings[ctx]) == 1
+    # claim alone: nothing bumped, original stands, human queue holds it
+    assert [s_["time"] for s_ in spoke.confirmed_showings[ctx]] == ["2026-08-01T10:00"]
+    assert ctx in spoke.pending_bumps
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("human confirmation required" in r for r in reasons)
 
+    # human confirms via signed config.update -> bump executes + notices
+    env = Envelope(from_agent="human", to_agent="06", intent="config.update",
+                   client_context_id=ctx,
+                   payload={"confirm_protected_bump": True},
+                   provenance={"source": "human", "captured_at": "runtime",
+                               "verbatim_available": True})
+    signer.sign(env)
+    hub.send(env)
+    assert ctx not in spoke.pending_bumps
+    assert len(spoke.confirmed_showings[ctx]) == 1
     bump_notices = [e for e in persisted(hub, "client.message.request")
                     if e["payload"].get("template") == "showing_bumped_notice"]
-    assert bump_notices, "the displaced party must be notified, not silently dropped"
+    assert bump_notices, "the displaced party must be notified"
     bump_logs = [e for e in persisted(hub, "interaction.log")
                 if e["payload"].get("kind") == "showing_bumped"]
     assert bump_logs
-
 
 def test_feedback_ask_stops_after_two_never_asks_a_third(tmp_path):
     """tuple 10 was declared (feedback_asks dict) but never actually

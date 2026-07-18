@@ -178,8 +178,11 @@ def test_extension_claim_without_amendment_tracks_original(tmp_path):
     hub.send(config_update(signer, "t-008", {"extension_claim": {
         "milestone": "financing_contingency", "amendment_on_file": False}}))
     assert spoke.timelines["t-008"]["financing_contingency"]["deadline"] == "2026-08-20"
-    alerts = persisted(hub, "deadline.alert")
-    assert any(a["payload"].get("kind") == "unconfirmed_extension_claim" for a in alerts)
+    # Owner decision #5 (2026-07-17): "alert human" = the human queue, not
+    # a deadline.alert onto 11's client-facing template path.
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("extension claimed with no amendment" in r for r in reasons)
 
 
 def test_possession_terms_ambiguous_quotes_exact_clause(tmp_path):

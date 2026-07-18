@@ -51,8 +51,14 @@ class Spoke15FinancialTracking:
           what data supports
     """
 
-    def __init__(self, hub):
+    # TUNABLE (owner-ratified 2026-07-17): commission_rate=0.08 - the
+    # DEFAULT rate used ONLY when a close arrives with a sale_price but no
+    # explicit commission_amount. An explicit amount always wins; a computed
+    # amount is labeled computed, never presented as a recorded figure.
+    # See docs/TUNING_MANUAL.md to change.
+    def __init__(self, hub, commission_rate: float = 0.08):
         self.hub = hub
+        self.commission_rate = commission_rate
         self.commissions: dict[str, dict] = {}  # ctx -> {amount, signed, source}
         self.expenses: dict[str, list[dict]] = {}
         self.roi_claims: dict[str, list[dict]] = {}  # attribution_key -> claims
@@ -74,6 +80,14 @@ class Spoke15FinancialTracking:
             amount = payload.get("commission_amount")
             signed = payload.get("signed_docs_only", False)
             source = payload.get("source", "closing_statement")
+            # Owner decision 2026-07-17: when no explicit amount arrives but
+            # the close carries a sale_price, compute at the default rate
+            # (ratified starting point 8%) and LABEL it computed - an
+            # explicit amount always wins over the computation, and a close
+            # with neither stays None (visible gap, never invented).
+            if amount is None and payload.get("sale_price") is not None:
+                amount = payload["sale_price"] * self.commission_rate
+                source = f"computed_at_default_rate_{self.commission_rate}"
             if not signed:
                 # tuple 6: unsigned amendment -> compute on signed docs
                 # only, projection labeled as such

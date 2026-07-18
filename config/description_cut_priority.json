@@ -1,0 +1,7 @@
+{
+  "_status": "RATIFIED 2026-07-17 (owner decision #3, this session) - tuple 11's 'cut by priority list from the identity config' finally has the config it names. Order = cut FIRST to LAST when remarks exceed the MLS field limit. 'attributed_facts' is deliberately absent: source attributions are never cut, per the same tuple.",
+  "cut_priority": [
+    "adjectives",
+    "unattributed_facts"
+  ]
+}

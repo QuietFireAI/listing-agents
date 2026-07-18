@@ -72,6 +72,7 @@ class Spoke06ShowingScheduler:
         self.showing_agent_no_shows: dict[str, int] = {}  # requester_id -> count
         self.feedback_asks: dict[str, int] = {}  # showing_id -> ask count
         self.pending_status_checks: dict[str, dict] = {}  # ctx -> held request
+        self.pending_bumps: dict[str, dict] = {}  # ctx -> held protected-bump request
         # per-state or per-property minimum notice hours for occupied homes
         self.min_notice_hours = min_notice_hours or {"default": 24}
         hub.register("06", self.handle)
@@ -110,6 +111,29 @@ class Spoke06ShowingScheduler:
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id
+
+        if env.intent == "config.update" and "confirm_protected_bump" in env.payload:
+            # Human's confirmation of a held protected-deadline bump - the
+            # only path that ever executes it. config.update reaches this
+            # handler only via the hub's signed-authority pipeline.
+            held = self.pending_bumps.pop(ctx, None)
+            if held is None or not env.payload["confirm_protected_bump"]:
+                return
+            existing = self.confirmed_showings.setdefault(ctx, [])
+            for bumped in [s for s in existing
+                           if self._time_conflict(s.get("time"),
+                                                  held["requested_time"],
+                                                  held["buffer_minutes"])]:
+                existing.remove(bumped)
+                self.hub.send(_env("06", "11", "client.message.request", ctx,
+                                   {"template": "showing_bumped_notice",
+                                    "original_time": bumped["time"],
+                                    "reason": "protected_deadline_priority"}))
+                self.hub.send(_env("06", "14", "interaction.log", ctx,
+                                   {"kind": "showing_bumped",
+                                    "time": bumped["time"]}))
+            self._schedule(ctx, held["payload"], env)
+            return
 
         if env.intent == "vendor.cancellation_notice":
             # A vendor relevant to this context cancelled late (09's
@@ -314,30 +338,36 @@ class Spoke06ShowingScheduler:
                                              "sequencing required",
                                     "conflicting_times": [s["time"] for s in conflicting]}))
                 return
-            # "protected deadline wins" must actually RESOLVE the
-            # collision, not just ignore the check and schedule over it.
-            # Was: both showings ended up "confirmed" in state, and the
-            # bumped party got no cancellation, no notification, nothing
-            # - a real double-booking, contradicting this same tuple's
-            # own "never double-book and hope". Fixed: the bumped
-            # showing(s) are actually removed and the affected party is
-            # notified.
-            for bumped in conflicting:
-                existing.remove(bumped)
-                self.hub.ingest_spoke_trace(
-                    "06", env.envelope_id,
-                    thought=f"protected-deadline request at {requested_time!r} "
-                            f"bumps existing showing at {bumped['time']!r} - "
-                            f"removing it and notifying the affected party, "
-                            f"not leaving both marked confirmed",
-                    result=f"bumped: {bumped['time']!r}")
-                self.hub.send(_env("06", "11", "client.message.request", ctx,
-                                   {"template": "showing_bumped_notice",
-                                    "original_time": bumped["time"],
-                                    "reason": "protected_deadline_priority"}))
-                self.hub.send(_env("06", "14", "interaction.log", ctx,
-                                   {"kind": "showing_bumped",
-                                    "time": bumped["time"]}))
+            # Owner decision 2026-07-17: protected_deadline is a CALLER-
+            # WRITABLE payload flag - any requester claiming it used to
+            # auto-bump confirmed showings, the same trusted-self-report
+            # class this codebase refuses everywhere else (18 derives
+            # protection from source; 09 derives regulated from roster).
+            # Now the claim routes to HUMAN CONFIRMATION with the full
+            # conflict; the bump only executes on the human's signed
+            # config.update (confirm_protected_bump), never on the claim.
+            self.hub.ingest_spoke_trace(
+                "06", env.envelope_id,
+                thought=f"protected-deadline claim at {requested_time!r} "
+                        f"conflicts with confirmed showing(s) "
+                        f"{[s['time'] for s in conflicting]} - the claim is "
+                        f"caller-writable, so the bump goes to human "
+                        f"confirmation, never executed on the claim alone",
+                result="held: bump_requires_human_confirmation")
+            self.pending_bumps[ctx] = {"requested_time": requested_time,
+                                       "buffer_minutes": buffer_minutes,
+                                       "payload": payload,
+                                       "conflicting_times":
+                                           [s["time"] for s in conflicting]}
+            self.hub.send(_env("06", "queue", "clarification.request", ctx,
+                               {"reason": "protected-deadline claim would "
+                                         "bump confirmed showing(s) - human "
+                                         "confirmation required, the claim "
+                                         "alone never bumps",
+                                "requested_time": requested_time,
+                                "conflicting_times":
+                                    [s["time"] for s in conflicting]}))
+            return
 
         # Real bug found in Agent 18's review 2026-07-16: this send never
         # included 'day' or 'timezone_confirmed' - Agent 18 keys its

@@ -106,6 +106,31 @@ now the second one. Revisit when real after-action/fade-rate data exists.
 | `dispatcher-agents/dispatcher/hub.py` `Hub.__init__` | `loop_threshold` | `20` | Max envelopes per `(client_context_id, intent)` pair before the hub suspends the loop into `clarification.request`, treating it as a possible runaway |
 | `dispatcher-agents/MANNERS.md` §Re-injection | backstop `N` | `10` | Agent turns allowed with no other MANNERS re-injection trigger (phase gate, post-compaction) before a mandatory turn-backstop re-injection fires anyway |
 
+## Ratified 2026-07-17 (owner decisions #1, #3, #4, #6 — this session)
+
+| Agent | Parameter | Value | Controls |
+|---|---|---|---|
+| 15 (Financial Tracking) | `commission_rate` | `0.08` | DEFAULT rate used ONLY when a close carries `sale_price` but no explicit `commission_amount`. Explicit amount always wins; computed amounts are labeled `computed_at_default_rate_*`, never presented as recorded figures. Owner-ratified starting point (decision #1); revisit against real closings |
+| 04 (Listing Description) | `config/description_cut_priority.json` | `["adjectives", "unattributed_facts"]` | Cut order when remarks exceed `mls_char_limit` (first entry cut first). Attributions never cut — structurally absent from the cut classes (decision #3). File finally exists; tuple 11 always named it |
+| 04 (Listing Description) | photo/data contradiction detection | symmetric set difference | When `photo_detected_features` is present, ANY feature in the data sheet not in the photos, or in the photos not in the data sheet, halts the asset into clarification (decision #4, delegated). A caller-supplied `photo_data_contradictions` flag also halts; neither path suppresses the other. Not a numeric knob — documented here so its behavior is known outside the source |
+| dispatcher-agents `SignerRegistry.check` | `effective` date enforcement | temporal, fail-closed | A signer entry with no effective date, an unparseable one, or a future-dated one DENIES (decision #8 answer: the field was schema-present, enforcement-absent — `check()` never read it). `today` defaults to the real system date; tests pass it explicitly |
+
+## External adapters — NOT YET WIRED (owner decision #6: tracked here until clean)
+
+Three intents route to the virtual destination `external` and currently
+**dead-letter at runtime** (benign `no handler for external` path — audited,
+not notified). Nothing leaves the swarm until a real adapter registers a
+handler for `"external"` on the hub:
+
+| Intent | Sender | What's dark until an adapter exists |
+|---|---|---|
+| `vendor.schedule` | 09 | Every vendor booking (photography, inspector, appraiser…) |
+| `client.message.send` | 11 | Every client-facing message the swarm composes |
+| `campaign.publish` | 12 | Every campaign publish AND retract action |
+
+Update this table (and delete rows) as each adapter lands. A deployment
+with these dark is a swarm that talks to itself.
+
 ## Also worth knowing about (not tuning-manual material, but adjacent)
 
 - **`dispatcher-agents/dispatcher/notifier.py`**: `TWILIO_ACCOUNT_SID` /

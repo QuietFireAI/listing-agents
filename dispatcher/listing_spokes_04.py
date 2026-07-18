@@ -48,11 +48,29 @@ class Spoke04ListingDescription:
     """
 
     # TUNABLE (owner-ratified 2026-07-16): mls_char_limit=800.
+    # TUNABLE (owner-ratified 2026-07-17): cut priority now genuinely reads
+    # config/description_cut_priority.json - tuple 11 always said "cut by
+    # priority list from the identity config" and the config never existed;
+    # the order was hardcoded. Fail closed: a present-but-unreadable config
+    # raises rather than silently reverting to a hardcoded order.
     # See docs/TUNING_MANUAL.md to change.
-    def __init__(self, hub, mls_char_limit: int = 800):
+    _DEFAULT_CUT_PRIORITY = ["adjectives", "unattributed_facts"]
+
+    def __init__(self, hub, mls_char_limit: int = 800,
+                 cut_priority_config: str | None = None):
         self.hub = hub
         self.drafts: dict[str, dict] = {}  # ctx -> draft asset pending verdict
         self.mls_char_limit = mls_char_limit
+        import json, os
+        path = cut_priority_config or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config", "description_cut_priority.json")
+        if os.path.exists(path):
+            self.cut_priority = json.load(open(path))["cut_priority"]
+        else:
+            # config absent (e.g. bare-core install): documented default,
+            # identical to the ratified file's content
+            self.cut_priority = list(self._DEFAULT_CUT_PRIORITY)
         hub.register("04", self.handle)
 
     def _build_facts(self, data: dict) -> tuple[list[dict], list[str]]:
@@ -115,10 +133,27 @@ class Spoke04ListingDescription:
 
     def _apply_gates(self, data: dict, ctx: str, env: Envelope) -> str | None:
         """Returns an escalation reason if a hard gate fires, else None."""
-        # tuple 1: photos contradict data sheet -> halt, clarification
+        # tuple 1: photos contradict data sheet -> halt, clarification.
+        # Owner decision #4 (2026-07-17, delegated): detection is now REAL,
+        # not caller-dependent. Before: photo_features/data_features were
+        # computed and merely ATTACHED to the clarification - the actual
+        # comparison never ran, so the halt only fired if the caller
+        # pre-computed photo_data_contradictions itself (decorative-check
+        # class). Now: when photo detection ran at all (the field is
+        # present), the symmetric difference IS the contradiction - a
+        # feature the data claims that photos don't show, or a photo-
+        # visible feature absent from the data sheet, both halt. An
+        # explicit caller flag still halts too; neither path suppresses
+        # the other.
         photo_features = set(data.get("photo_detected_features", []))
         data_features = set(data.get("features", []))
         contradictions = data.get("photo_data_contradictions")
+        if not contradictions and "photo_detected_features" in data:
+            claimed_not_shown = sorted(data_features - photo_features)
+            shown_not_claimed = sorted(photo_features - data_features)
+            if claimed_not_shown or shown_not_claimed:
+                contradictions = {"claimed_in_data_not_in_photos": claimed_not_shown,
+                                  "in_photos_not_in_data": shown_not_claimed}
         if contradictions:
             self.hub.send(_env("04", "queue", "clarification.request", ctx,
                                {"reason": "photos contradict data sheet",
@@ -169,27 +204,42 @@ class Spoke04ListingDescription:
         return all(m.get("rights_confirmed_via_09") for m in media) if media else True
 
     def _cut_to_limit(self, facts: list[dict]) -> tuple[list[dict], bool]:
-        """Tuple 4/11: cut adjectives before facts; attributions never cut.
-        Never truncate mid-claim - drop whole fact entries only."""
+        """Tuple 4/11: cut by the priority list from the identity config
+        (config/description_cut_priority.json), first entry cut first.
+        Attributions are never cut - structurally: no cut class ever
+        matches an attributed fact. Never truncate mid-claim - drop whole
+        fact entries only."""
         def total_len(fs):
             return sum(len(f["text"]) + (len(f["attribution"] or "") + 12) for f in fs)
+
+        def in_class(f, cls):
+            if cls == "adjectives":
+                return f["adjective"]
+            if cls == "unattributed_facts":
+                return not f["attribution"] and not f["adjective"]
+            raise ValueError(f"unknown cut class {cls!r} in "
+                             f"description_cut_priority.json - fail closed, "
+                             f"never guessing what to cut")
 
         if total_len(facts) <= self.mls_char_limit:
             return facts, False
 
-        kept = [f for f in facts if not f["adjective"]]
-        if total_len(kept) <= self.mls_char_limit:
-            return kept, True
-
-        # still over: drop unattributed facts before attributed ones, but
-        # never truncate any single entry - only ever drop whole entries
-        attributed = [f for f in kept if f["attribution"]]
-        unattributed = [f for f in kept if not f["attribution"]]
-        result = list(attributed)
-        for f in unattributed:
-            if total_len(result + [f]) <= self.mls_char_limit:
-                result.append(f)
-        return result, True
+        remaining = list(facts)
+        for cls in self.cut_priority:
+            kept = [f for f in remaining if not in_class(f, cls)]
+            droppable = [f for f in remaining if in_class(f, cls)]
+            if total_len(kept) <= self.mls_char_limit:
+                # partial cut within this class: keep as many of its
+                # members as still fit, whole entries only
+                result = list(kept)
+                for f in droppable:
+                    if total_len(result + [f]) <= self.mls_char_limit:
+                        result.append(f)
+                return result, True
+            remaining = kept
+        # every cut class exhausted; attributed facts stand even over the
+        # limit - "attributions are never cut" outranks the field limit
+        return remaining, True
 
     def handle(self, env: Envelope):
         ctx = env.client_context_id

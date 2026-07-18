@@ -180,10 +180,17 @@ class Spoke07TransactionCoordinator:
             if "offer_status" in payload:
                 stage_data = payload["offer_status"]
                 self.offer_status[ctx] = stage_data
-                self.hub.send(_env("07", "11", "deadline.alert", ctx,
-                                   {"kind": "offer_status", **stage_data}))
-                self.hub.send(_env("07", "18", "deadline.alert", ctx,
-                                   {"kind": "offer_status", **stage_data}))
+                # Owner decision #5 (2026-07-17): offer-status tracking is a
+                # HUMAN-facing alert, not a client touch. The old 11 send
+                # rendered through 11's generic template path straight to
+                # the CLIENT channel, and (found in 18's review) the
+                # milestone-less payload also created a junk None-keyed
+                # protected block on day None in 18's calendar. Both gone:
+                # human queue + record only.
+                self.hub.send(_env("07", "queue", "clarification.request", ctx,
+                                   {"reason": "offer status update - human "
+                                             "review, never a client touch",
+                                    "offer_status": stage_data}))
                 self.hub.send(_env("07", "14", "interaction.log", ctx,
                                    {"kind": "offer_status", **stage_data}))
                 return
@@ -237,9 +244,17 @@ class Spoke07TransactionCoordinator:
                                 f"deadline, recording claim as "
                                 f"stated_by_party, alerting human",
                         result="original deadline retained")
-                    self.hub.send(_env("07", "11", "deadline.alert", ctx,
-                                       {"kind": "unconfirmed_extension_claim",
-                                        "milestone": milestone},
+                    # Owner decision #5 (2026-07-17): "alert human" means
+                    # the human queue - the old 11 send put an unconfirmed
+                    # extension claim on the CLIENT channel via 11's
+                    # generic template path.
+                    self.hub.send(_env("07", "queue", "clarification.request",
+                                       ctx, {"reason": "extension claimed "
+                                                       "with no amendment on "
+                                                       "file - original "
+                                                       "deadline stands, "
+                                                       "human review",
+                                            "milestone": milestone},
                                        confidence=STATED_BY_PARTY))
                 return
 
@@ -354,6 +369,7 @@ class Spoke07TransactionCoordinator:
                                   "close_date": (entry or {}).get("deadline"),
                                   "commission_amount":
                                       payload.get("commission_amount"),
+                                  "sale_price": payload.get("sale_price"),
                                   "signed_docs_only":
                                       payload.get("signed_docs_only", False)}
                 self.hub.ingest_spoke_trace(

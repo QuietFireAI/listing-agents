@@ -272,3 +272,39 @@ def test_commission_crosscheck_actually_receives_entries(tmp_path):
                    if e["kind"] == "escalation.raised"
                    and "does not match 14's logged" in str(e.get("trigger", ""))]
     assert escalations, "mismatched commission must escalate - it never could before"
+
+
+# ---------- owner decision #1 (2026-07-17): 8% default-rate computation
+def test_commission_computed_at_default_rate_only_when_no_explicit_amount(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke15FinancialTracking(hub)
+    hub.register("18", lambda env: None)
+    hub.register("14", lambda env: None)
+    hub.on_turn_start()
+    # sale_price, no explicit amount -> computed at 0.08 and LABELED
+    hub.send(Envelope(from_agent="07", to_agent="15", intent="transaction.closed",
+                      client_context_id="r-1",
+                      payload={"closed": True, "sale_price": 400000,
+                               "signed_docs_only": True},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    rec = spoke.commissions["r-1"]
+    assert rec["amount"] == 32000.0
+    assert rec["source"].startswith("computed_at_default_rate_")
+    # explicit amount always wins over the computation
+    hub.send(Envelope(from_agent="07", to_agent="15", intent="transaction.closed",
+                      client_context_id="r-2",
+                      payload={"closed": True, "sale_price": 400000,
+                               "commission_amount": 30000,
+                               "signed_docs_only": True},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert spoke.commissions["r-2"]["amount"] == 30000
+    assert not spoke.commissions["r-2"]["source"].startswith("computed")
+    # neither price nor amount -> stays None, visible gap, never invented
+    hub.send(Envelope(from_agent="07", to_agent="15", intent="transaction.closed",
+                      client_context_id="r-3",
+                      payload={"closed": True, "signed_docs_only": True},
+                      provenance={"source": "spoke-07", "captured_at": "runtime",
+                                  "verbatim_available": True}))
+    assert spoke.commissions["r-3"]["amount"] is None
