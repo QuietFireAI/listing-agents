@@ -8,11 +8,52 @@ them.
 
 **A note on numbers, stated once so it never has to be hedged again:**
 this document names the tasks the swarm takes off a human's plate. It
-does not quote hours-saved figures, because no deployment has produced
-that data yet. When after-action reports from live use exist, measured
-figures replace the task descriptions below. A confident-looking number
-without a basis is a fabrication — the same rule the agents themselves
-run on.
+does not quote hours-saved figures for this swarm, because no
+deployment has produced that data yet. When after-action reports from
+live use exist, measured figures replace the task descriptions below.
+A confident-looking number without a basis is a fabrication — the same
+rule the agents themselves run on.
+
+## Third-party context (attributed industry research — not measurements of this swarm)
+
+The following published figures explain why specific playbooks target
+what they target. They are third-party research about the industry,
+clearly attributed, and they describe the size of the problems — not
+the performance of this software.
+
+- **Speed to lead (why P11's SLA defaults to 5 minutes):** the 2007
+  MIT/InsideSales.com Lead Response Management study (six companies,
+  15,000+ leads, 100,000+ call attempts) found the odds of making
+  contact with a web lead are roughly **100x higher when attempted
+  within 5 minutes versus 30 minutes**, and the odds of qualifying the
+  lead roughly **21x higher** — with immediacy of response
+  overshadowing both time of day and day of week. A 2011 Harvard
+  Business Review study ("The Short Life of Online Sales Leads,"
+  Oldroyd et al., 2,241 audited U.S. firms) found the **average
+  first-response time was 42 hours and 23% of firms never responded at
+  all**, while firms responding within an hour were roughly **7x more
+  likely to qualify** the lead. These two studies are routinely
+  conflated; the 100x/21x figures are MIT/InsideSales, the 42-hour
+  average is HBR. P11's value proposition is exactly this gap: the SLA
+  that holds at 9pm and mid-showing.
+- **Referral economics (why P10, P13, and P16-P18 exist at all):**
+  NAR's 2025 Profile of Home Buyers and Sellers reports **66% of
+  sellers found their agent through a referral or used an agent they'd
+  worked with before**, around **90% of clients say they would use or
+  recommend their agent again**, and reputation is the single most
+  important factor in seller agent selection (35%). The follow-up
+  program that P10 schedules and P13 executes is the mechanism that
+  converts that stated willingness into the referral pipeline the
+  industry's own data says the business runs on.
+- **Consent economics (why 01 captures consent at first contact and
+  03/11/13 enforce it structurally):** the TCPA (47 U.S.C. § 227)
+  provides statutory damages of **$500 per call or text, trebled to
+  $1,500 for willful or knowing violations, with no cap** — and each
+  message is a separate violation, no proof of actual harm required.
+  A single drip sequence sent past a revoked consent is not one
+  mistake; it is a per-message liability. This is why "zero touches
+  against opt-out flags — verifiable from 14's records" appears in
+  ratified completion criteria rather than in a training manual.
 
 **The one sentence that covers everything:** the swarm does the
 coordination, chasing, logging, drafting, and vigilance; the human
