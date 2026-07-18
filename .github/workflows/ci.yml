@@ -1,0 +1,38 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  fresh-clone-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      # The exact buyer path: clone -> install -> test. This job existing
+      # earlier would have caught the 98-failure DOA state automatically.
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests_listing/ -q
+  core-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: clone core at main
+        run: git clone --depth 1 https://github.com/QuietFireAI/dispatcher-agents.git /tmp/core
+      # Fork-drift gate: the vendored dispatcher/ must match core exactly.
+      # This job existing earlier would have caught the 105-line hub.py lag.
+      - run: python tools/sync_core.py --core /tmp/core --check
+  unarmed-still-routes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      # No pillars installed at all: the swarm must still route (declared
+      # unarmed), with ONLY the explicit six-pillars-armed test failing.
+      - run: pip install pytest
+      - run: |
+          python -m pytest tests_listing/ -q > out.txt 2>&1 || true
+          tail -1 out.txt
+          grep -q "1 failed" out.txt
+          grep -q "test_all_six_pillars_fire_on_listing_traffic" out.txt
