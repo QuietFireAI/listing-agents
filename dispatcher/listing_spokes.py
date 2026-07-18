@@ -666,18 +666,19 @@ class Spoke01LeadCapture:
                         f"(14) before creating a new lead object - never "
                         f"merge unconfirmed identity",
                 result="record.request issued")
-            self.hub.send(_env("01", "14", "record.request", ctx,
-                               {"dedupe_key": ctx}))
             # SKILL.md edge, ratified: OUT -> 18 | Wait-state signal (dedupe
-            # pending) | agent.status. Gap found 2026-07-17: the agent.status
-            # retrofit reached 02-20 but never touched 01 - the oldest agent,
-            # exactly the build-order-vs-rigor inversion SESSION_HANDOFF_5
-            # warned about. Without this, a lead stuck waiting on CRM dedupe
-            # was invisible to 18's briefing until it became a missed
-            # deadline.
+            # pending) | agent.status. Gap found 2026-07-17; ORDERING bug in
+            # that fix found 2026-07-18 by the operator console's first
+            # smoke run: the wait used to open AFTER the record.request -
+            # but 14 answers synchronously inside hub.send, so the resolve
+            # fired before the open and a permanently-waiting ghost sat in
+            # 18's briefing forever. Open BEFORE asking; a wait that can
+            # resolve before it exists isn't a wait.
             self.hub.send(_env("01", "18", "agent.status", ctx,
                                {"waiting_on": "crm_dedupe_response",
                                 "since": payload.get("today")}))
+            self.hub.send(_env("01", "14", "record.request", ctx,
+                               {"dedupe_key": ctx}))
             return
 
         if env.intent == "record.response":

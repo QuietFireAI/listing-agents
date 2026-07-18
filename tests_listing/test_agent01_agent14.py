@@ -730,3 +730,27 @@ def test_frozen_record_refuses_writes_until_signed_release(tmp_path):
                       provenance={"source": "spoke-07", "captured_at": "runtime",
                                   "verbatim_available": True}))
     assert len(spoke14.records["fz-1"]) == 2
+
+
+def test_dedupe_wait_opens_before_the_request_no_ghost_wait(tmp_path):
+    """Found by the operator console's first smoke run (2026-07-18): 14
+    answers record.request synchronously inside hub.send, so a wait
+    opened AFTER the request resolved before it existed - a permanent
+    ghost wait in 18's briefing. With 14 registered, the wait must end
+    RESOLVED in 18's state."""
+    from dispatcher.listing_spokes_18 import Spoke18CalendarTask
+    hub = make_hub(str(tmp_path))
+    Spoke14CRMPipeline(hub)
+    Spoke01LeadCapture(hub)
+    spoke18 = Spoke18CalendarTask(hub)
+    hub.on_turn_start()
+    hub.send(signal("ghost-1", {
+        "channel": "call", "name": "G", "phone": "5",
+        "property_interest": {"listing_id": "L1"}, "timeline": "60 days",
+        "budget": 1, "preapproval_status": "no", "today": "2026-07-18",
+        "consent": {"call": "yes", "text": "no", "email": "no"}}))
+    briefing = spoke18.generate_briefing("morning")
+    ghosts = [w for w in briefing["currently_waiting"]
+              if w["context"] == "ghost-1"
+              and w["waiting_on"] == "crm_dedupe_response"]
+    assert not ghosts, f"ghost wait survives resolution: {ghosts}"
