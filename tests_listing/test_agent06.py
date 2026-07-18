@@ -230,8 +230,9 @@ def test_protected_deadline_claim_holds_for_human_and_bumps_only_on_confirm(tmp_
     assert len(spoke.confirmed_showings[ctx]) == 1
 
     hub.send(showing_req(ctx, base_payload(requested_time="2026-08-01T10:00",
-                                           protected_deadline=True)))
-    # claim alone: nothing bumped, original stands, human queue holds it
+                                           protected_deadline=True,
+                                           lead_tier="HOT")))
+    # claim alone (even HOT): nothing bumped, original stands, human queue holds it
     assert [s_["time"] for s_ in spoke.confirmed_showings[ctx]] == ["2026-08-01T10:00"]
     assert ctx in spoke.pending_bumps
     reasons = [r.get("payload", {}).get("reason", "")
@@ -286,3 +287,25 @@ def test_feedback_response_clears_the_wait(tmp_path):
     assert "fb-002" not in spoke.feedback_asks
     statuses = persisted(hub, "agent.status")
     assert any(s["payload"].get("resolved") for s in statuses)
+
+
+
+def test_protected_claim_without_hot_tier_gets_no_bump_offer(tmp_path):
+    """Owner decision #2 refinement (2026-07-18): hotness gates the bump
+    OFFER. Tier is relayed by 13 from 14's CRM records - a claim with no
+    tier, or a non-hot one, falls back to plain conflict sequencing and
+    never lands in pending_bumps."""
+    hub, _ = make_hub(str(tmp_path))
+    spoke = Spoke06ShowingScheduler(hub)
+    hub.on_turn_start()
+    ctx = "s-023"
+    hub.send(showing_req(ctx, base_payload(requested_time="2026-08-02T10:00")))
+    for tier in (None, "WARM"):
+        hub.send(showing_req(ctx, base_payload(requested_time="2026-08-02T10:00",
+                                               protected_deadline=True,
+                                               lead_tier=tier)))
+        assert ctx not in spoke.pending_bumps
+    reasons = [r.get("payload", {}).get("reason", "")
+               for r in hub.queues["clarification.request"]]
+    assert any("lead tier not HOT - no bump offered" in r for r in reasons)
+    assert len(spoke.confirmed_showings[ctx]) == 1

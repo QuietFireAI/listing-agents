@@ -41,6 +41,8 @@ class Spoke13BuyerSearchMatch:
          flagged delivery requires standing preference
       4. 'is this a good price?' -> Legal Line
       5. match volume overload -> rank strictly by stated-criteria fit,
+         IMPLEMENTED 2026-07-18 (owner decision #7) - see _match_one /
+         flush_match_digest. Original note kept below for history:
          no inferred preferences. NOT implemented - zero code, zero test
          coverage, confirmed by grep. Every match is delivered
          individually and immediately as its triggering envelope
@@ -64,8 +66,17 @@ class Spoke13BuyerSearchMatch:
           continue flagged unverified-financing
     """
 
-    def __init__(self, hub):
+    # TUNABLE (owner-ratified 2026-07-18, decision #7):
+    # max_matches_per_buyer_per_day=5 - beyond this, the day's remaining
+    # matches batch into ONE ranked digest instead of N individual pings.
+    # Overload ranking: count of stated criteria the listing satisfies,
+    # ties to newest first (arrival order). Nothing is silently dropped -
+    # every match still logs to 14 individually, and the digest carries
+    # every ranked entry. See docs/TUNING_MANUAL.md.
+    def __init__(self, hub, max_matches_per_buyer_per_day: int = 5):
         self.hub = hub
+        self.max_matches_per_buyer_per_day = max_matches_per_buyer_per_day
+        self.matches_today: dict[str, dict] = {}  # ctx -> {day, count, overflow: [...]}
         self.buyer_criteria: dict[str, list[dict]] = {}
         self.deliver_unknown_ok: dict[str, bool] = {}  # standing preference, tuple 3
         self.match_history: dict[str, list[dict]] = {}
@@ -148,11 +159,77 @@ class Spoke13BuyerSearchMatch:
                         "unknown_fields": missing_hard,
                         "unverified_financing": self.preapproval_expired.get(ctx, False)}
         self.match_history.setdefault(ctx, []).append(match_record)
+
+        # tuple 5 (owner decision #7, 2026-07-18): overload = more than
+        # max_matches_per_buyer_per_day matches for one buyer in one day.
+        # Under the threshold: individual ping as before. Over: the match
+        # joins the day's ranked digest (flush_match_digest) - ranked
+        # strictly by count of STATED criteria satisfied, never by any
+        # criterion the buyer didn't state. Every match logs to 14 either
+        # way - the CRM record is complete even when the client ping is
+        # batched.
+        day = listing.get("today") or env.payload.get("today")
+        state = self.matches_today.setdefault(ctx, {"day": day, "count": 0,
+                                                    "overflow": []})
+        if day != state["day"]:
+            state.update({"day": day, "count": 0, "overflow": []})
+        state["count"] += 1
+        self.hub.send(_env("13", "14", "interaction.log", ctx,
+                           {"kind": "match_delivered", "listing_id": listing.get("listing_id")}))
+        if state["count"] > self.max_matches_per_buyer_per_day:
+            criteria_met = self._criteria_met_count(ctx, listing)
+            state["overflow"].append({"match": match_record,
+                                      "criteria_met": criteria_met,
+                                      "arrival": state["count"]})
+            self.hub.ingest_spoke_trace(
+                "13", env.envelope_id,
+                thought=f"match #{state['count']} today for this buyer "
+                        f"exceeds max_matches_per_buyer_per_day="
+                        f"{self.max_matches_per_buyer_per_day} - joining "
+                        f"the ranked digest ({criteria_met} stated "
+                        f"criteria met), not pinging individually; "
+                        f"logged to 14 regardless",
+                result="match_deferred_to_digest")
+            return
         self.hub.send(_env("13", "11", "client.message.request", ctx,
                            {"template": "new_match", "match": match_record},
                            confidence=SOURCE_VERIFIED))
-        self.hub.send(_env("13", "14", "interaction.log", ctx,
-                           {"kind": "match_delivered", "listing_id": listing.get("listing_id")}))
+
+    def _criteria_met_count(self, ctx: str, listing: dict) -> int:
+        """Rank basis for overload: how many STATED criteria this listing
+        satisfies. Budget compares against price; area compares equal;
+        any other stated field compares equal when the listing carries
+        it. A field the listing lacks counts unmet - unknown never ranks
+        above known."""
+        count = 0
+        for c in self.buyer_criteria.get(ctx, []):
+            field, value = c.get("field"), c.get("value")
+            if field == "budget":
+                price = listing.get("price")
+                if value is not None and price is not None and price <= value:
+                    count += 1
+            elif field is not None and listing.get(field) == value:
+                count += 1
+        return count
+
+    def flush_match_digest(self, ctx: str):
+        """Sweep/scheduler-called (end of day, same caller pattern as the
+        other sweeps): sends the day's overflow as ONE ranked digest.
+        Rank: stated-criteria-met desc, ties newest-first. Clears the
+        overflow; the day counter resets on the next day's first match."""
+        state = self.matches_today.get(ctx)
+        if not state or not state["overflow"]:
+            return "nothing_to_flush"
+        ranked = sorted(state["overflow"],
+                        key=lambda m: (-m["criteria_met"], -m["arrival"]))
+        self.hub.send(_env("13", "11", "client.message.request", ctx,
+                           {"template": "match_digest",
+                            "matches": [m["match"] for m in ranked],
+                            "rank_basis": "stated_criteria_met",
+                            "count": len(ranked)},
+                           confidence=SOURCE_VERIFIED))
+        state["overflow"] = []
+        return f"flushed:{len(ranked)}"
 
     def request_neighborhood_data(self, ctx: str):
         """Job component: neighborhood packages for buyer profiles via 10.
@@ -297,9 +374,20 @@ class Spoke13BuyerSearchMatch:
                                              "buyer agreement on file",
                                    "agent": "13"})
                 return
+            # Owner decision #2 (2026-07-18): relay the lead's tier from
+            # 14's records (02 logs it there via interaction.log) so 06
+            # can gate protected-deadline bump offers on hotness. Spoke-
+            # relayed from the CRM record, never client-writable. Absent
+            # tier stays absent - 06 fails closed toward no bump offer.
+            tier = None
+            for e in payload.get("entries", []):
+                t = (e.get("payload") or {}).get("tier")
+                if t:
+                    tier = t  # last one wins - newest entry
             self.hub.send(_env("13", "06", "showing.request", ctx,
                                {"listing_id": pending["listing_id"],
                                 "buyer_agreement_on_file": True,
+                                "lead_tier": tier,
                                 "requester_identity_verified":
                                     payload.get("requester_identity_verified", False)}))
             return

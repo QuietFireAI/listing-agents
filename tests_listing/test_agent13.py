@@ -270,3 +270,61 @@ def test_request_neighborhood_data_sends_data_request(tmp_path):
     spoke.request_neighborhood_data("b-019")
     req = persisted(hub, "data.request")
     assert req and req[0]["to_agent"] == "10"
+
+
+# --------- tuple 5 overload digest (owner decision #7, 2026-07-18)
+def test_overload_batches_into_ranked_digest_nothing_dropped(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke13BuyerSearchMatch(hub)
+    for a in ("11", "14", "18"):
+        hub.register(a, lambda env: None)
+    hub.on_turn_start()
+    ctx = "b-ovl"
+    hub.send(config_update(signer, ctx, {"buyer_criteria": [
+        {"field": "budget", "value": 500000},
+        {"field": "area", "value": "north"}]}))
+    # 8 matches same day: 5 ping individually, 3 defer to digest
+    for i in range(8):
+        hub.send(listing_data(ctx, {
+            "listing_id": f"L{i}", "price": 400000 + i * 10000,
+            "area": "north" if i % 2 == 0 else "south",
+            "today": "2026-07-18"}))
+    pings = [e for e in persisted(hub, "client.message.request")
+             if e["payload"].get("template") == "new_match"]
+    assert len(pings) == 5
+    # every match logged to 14 - nothing silently dropped
+    logs = [e for e in persisted(hub, "interaction.log")
+            if e["payload"].get("kind") == "match_delivered"]
+    assert len(logs) == 8
+    # digest: ranked by stated-criteria-met desc, ties newest-first
+    assert spoke.flush_match_digest(ctx) == "flushed:3"
+    digests = [e for e in persisted(hub, "client.message.request")
+               if e["payload"].get("template") == "match_digest"]
+    assert len(digests) == 1
+    ids = [m["listing_id"] for m in digests[0]["payload"]["matches"]]
+    # overflow = L5(south,1 met), L6(north,2 met), L7(south,1 met)
+    # rank: L6 first (2 met), then L7 over L5 (tie, newest first)
+    assert ids == ["L6", "L7", "L5"]
+    assert digests[0]["payload"]["rank_basis"] == "stated_criteria_met"
+    # flush twice never re-sends
+    assert spoke.flush_match_digest(ctx) == "nothing_to_flush"
+
+
+def test_overload_counter_resets_on_new_day(tmp_path):
+    hub, signer = make_hub(str(tmp_path))
+    spoke = Spoke13BuyerSearchMatch(hub)
+    for a in ("11", "14", "18"):
+        hub.register(a, lambda env: None)
+    hub.on_turn_start()
+    ctx = "b-day"
+    hub.send(config_update(signer, ctx, {"buyer_criteria": [
+        {"field": "area", "value": "north"}]}))
+    for i in range(6):
+        hub.send(listing_data(ctx, {"listing_id": f"D{i}", "area": "north",
+                                    "today": "2026-07-18"}))
+    assert len(spoke.matches_today[ctx]["overflow"]) == 1
+    hub.send(listing_data(ctx, {"listing_id": "D6", "area": "north",
+                                "today": "2026-07-19"}))
+    assert spoke.matches_today[ctx]["day"] == "2026-07-19"
+    assert spoke.matches_today[ctx]["count"] == 1
+    assert spoke.matches_today[ctx]["overflow"] == []

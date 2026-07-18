@@ -338,14 +338,39 @@ class Spoke06ShowingScheduler:
                                              "sequencing required",
                                     "conflicting_times": [s["time"] for s in conflicting]}))
                 return
-            # Owner decision 2026-07-17: protected_deadline is a CALLER-
-            # WRITABLE payload flag - any requester claiming it used to
-            # auto-bump confirmed showings, the same trusted-self-report
-            # class this codebase refuses everywhere else (18 derives
-            # protection from source; 09 derives regulated from roster).
-            # Now the claim routes to HUMAN CONFIRMATION with the full
-            # conflict; the bump only executes on the human's signed
-            # config.update (confirm_protected_bump), never on the claim.
+            # Owner decision 2026-07-17 + #2 refinement 2026-07-18:
+            # protected_deadline is a CALLER-WRITABLE payload flag - any
+            # requester claiming it used to auto-bump confirmed showings.
+            # Now, two gates before a bump can even be OFFERED:
+            #   1. lead_tier (spoke-relayed by 13 from 14's CRM records,
+            #      where 02 logged it - never client-writable) must be
+            #      HOT. Not hot, or unknown, fails closed: plain
+            #      sequencing clarification, no bump offer at all.
+            #   2. A hot claim still only HOLDS for human confirmation -
+            #      the bump executes solely on the human's signed
+            #      config.update (confirm_protected_bump), never on the
+            #      claim.
+            tier = str(payload.get("lead_tier") or "").upper()
+            if tier != "HOT":
+                self.hub.ingest_spoke_trace(
+                    "06", env.envelope_id,
+                    thought=f"protected-deadline claim with lead_tier="
+                            f"{payload.get('lead_tier')!r} (not HOT, or "
+                            f"unknown) - bump offer declined, falls back "
+                            f"to plain conflict sequencing; hotness is "
+                            f"read from the CRM relay, never the claim",
+                    result="bump_offer_declined_tier_gate")
+                self.hub.send(_env("06", "queue", "clarification.request",
+                                   ctx,
+                                   {"reason": "calendar conflict within "
+                                             f"{buffer_minutes}min buffer - "
+                                             "sequencing required "
+                                             "(protected-deadline claim "
+                                             "present but lead tier not "
+                                             "HOT - no bump offered)",
+                                    "conflicting_times":
+                                        [s["time"] for s in conflicting]}))
+                return
             self.hub.ingest_spoke_trace(
                 "06", env.envelope_id,
                 thought=f"protected-deadline claim at {requested_time!r} "

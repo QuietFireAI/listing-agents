@@ -115,6 +115,13 @@ now the second one. Revisit when real after-action/fade-rate data exists.
 | 04 (Listing Description) | photo/data contradiction detection | symmetric set difference | When `photo_detected_features` is present, ANY feature in the data sheet not in the photos, or in the photos not in the data sheet, halts the asset into clarification (decision #4, delegated). A caller-supplied `photo_data_contradictions` flag also halts; neither path suppresses the other. Not a numeric knob — documented here so its behavior is known outside the source |
 | dispatcher-agents `SignerRegistry.check` | `effective` date enforcement | temporal, fail-closed | A signer entry with no effective date, an unparseable one, or a future-dated one DENIES (decision #8 answer: the field was schema-present, enforcement-absent — `check()` never read it). `today` defaults to the real system date; tests pass it explicitly |
 
+### Added 2026-07-18 (owner decisions #2 refinement, #7)
+
+| Agent | Parameter | Value | Controls |
+|---|---|---|---|
+| 13 (Buyer Search & Match) | `max_matches_per_buyer_per_day` | `5` | Individual match pings per buyer per day. Beyond it, matches join a ranked end-of-day digest (`flush_match_digest`, sweep-called): ranked by stated-criteria-met desc, ties newest-first. Nothing silently dropped — every match logs to 14 individually (decision #7) |
+| 06 (Showing Scheduler) | protected-deadline bump tier gate | `HOT` only | A protected-deadline claim only earns a HITL bump OFFER when `lead_tier` (relayed by 13 from 14's CRM records, where 02 logged it — never client-writable) is HOT. Not hot or unknown: plain conflict sequencing, no offer (decision #2). The bump itself still executes only on the human's signed `confirm_protected_bump` |
+
 ## External adapters — NOT YET WIRED (owner decision #6: tracked here until clean)
 
 Three intents route to the virtual destination `external` and currently
