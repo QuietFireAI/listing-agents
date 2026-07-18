@@ -45,6 +45,10 @@ mechanism.
   hand-edit here
 - `docs/PLAYBOOKS.md` - all 24 playbooks (trigger, agents deployed,
   HITL gates), generated the same way
+- `docs/WHAT_SUCCESS_MEANS.md` - per-playbook: what completion
+  delivers, what human work it displaces, what the human still owns -
+  written against the ratified completion criteria, with no invented
+  metrics
 - `dispatcher/sweep_runner.py` - the clock layer: run_daily_sweeps
   invokes every time-based check (deadlines, no-shows, SLAs, chase
   timeouts, digest flushes) from your scheduler
