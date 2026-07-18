@@ -9,6 +9,12 @@
 # in hub.ingest_spoke_trace. That import is now fail-declared, and this file
 # exists so nobody deploys unarmed by accident.
 pytest>=8.0
+# Ed25519 signing/verification on every authority lane - found by the
+# FIRST CI run (2026-07-18): absent from this file, 237 of 391 tests
+# fail in a clean environment because every signed-hub fixture needs it.
+# The container this file was authored in had it globally - the exact
+# invisible-dependency class this file exists to prevent.
+cryptography>=42
 
 open-mind @ git+https://github.com/QuietFireAI/open-mind.git
 agent-open-mind @ git+https://github.com/QuietFireAI/agent-open-mind.git

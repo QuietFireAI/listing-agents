@@ -30,7 +30,8 @@ jobs:
         with: {python-version: "3.12"}
       # No pillars installed at all: the swarm must still route (declared
       # unarmed), with ONLY the explicit six-pillars-armed test failing.
-      - run: pip install pytest
+      # cryptography is NOT a pillar - signing is core, always required.
+      - run: pip install pytest cryptography
       - run: |
           python -m pytest tests_listing/ -q > out.txt 2>&1 || true
           tail -1 out.txt
