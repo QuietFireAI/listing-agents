@@ -51,7 +51,7 @@ them inline.
 | 17 (Compliance) | `sla_days` | `1` | Turnaround SLA for a compliance verdict before an SLA-breach alert fires |
 | 17 (Compliance) | `near_miss_pattern_threshold` | `3` | Flagged verdicts from the same submitting agent before a pattern report goes to the owner |
 | 18 (Calendar & Task) | `max_events_per_day` | `8` | Calendar capacity before a day is treated as overloaded |
-| 18 (Calendar & Task) | `no_show_grace_minutes` | `60` | Minutes past a showing slot with no post-showing signal from 06 before 18 reports a calendar-detected `showing.no_show`. PROVISIONAL - no empirical basis, revisit with after-action data |
+| 18 (Calendar & Task) | `no_show_grace_minutes` | `60` | Minutes past a showing slot with no post-showing signal from 06 before 18 reports a calendar-detected `showing.no_show` (invoked by `dispatcher/sweep_runner.py` `run_daily_sweeps`, which now calls every `check_*` sweep in production - added 2026-07-18). PROVISIONAL - no empirical basis, revisit with after-action data |
 
 ## Found 2026-07-17, not yet reviewed by owner (dict/set-shaped, missed in the first sweep)
 
@@ -78,10 +78,10 @@ doesn't specify one.
 
 | Agent | Field | Default | Where it's set | Controls |
 |---|---|---|---|---|
-| 03 (Lead Nurture) | `spike_threshold` (in `behavioral.signal` payload) | `50` | `listing_spokes_03.py:289` | See note in the table above - distinct from Agent 12's, same name and default by coincidence, not shared code |
+| 03 (Lead Nurture) | `spike_threshold` (in `behavioral.signal` payload) | `50` | `listing_spokes_03.py` `behavioral.signal` branch | See note in the table above - distinct from Agent 12's, same name and default by coincidence, not shared code |
 | 06 (Showing Scheduler) | `buffer_minutes` (in `showing.request` payload) | `30` | `listing_spokes_06.py` `_schedule()` | Minimum spacing enforced between two showings on the same context before they're treated as conflicting. Missed in the original sweep - became load-bearing only once the buffer-enforcement fix landed (2026-07-16); before that it was captured but never compared against anything, so its default value had no functional effect. |
-| 12 (Marketing Campaign) | `spike_threshold` (in `platform.metrics` payload) | `50` | `listing_spokes_12.py:280` | Engagement value above which a spike feeds back into nurture (Agent 03) |
-| 19 (Prospecting) | `rank_threshold` (in `discovery.feed` payload) | `0.5` | `listing_spokes_19.py:186` | Minimum rank-basis-strength before a rank is included rather than presented unranked |
+| 12 (Marketing Campaign) | `spike_threshold` (in `platform.metrics` payload) | `50` | `listing_spokes_12.py` `platform.metrics` branch | Engagement value above which a spike feeds back into nurture (Agent 03) |
+| 19 (Prospecting) | `rank_threshold` (in `discovery.feed` payload) | `0.5` | `listing_spokes_19.py` `discovery.feed` branch | Minimum rank-basis-strength before a rank is included rather than presented unranked |
 
 To change the *fallback* value for any of these (not a one-off
 override), edit the source line directly — there's no single agent-level

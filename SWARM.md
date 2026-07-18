@@ -8,8 +8,8 @@ defect, not a change.
 
 ## Manifest (generated)
 - Agents: 21 (00-dispatcher + 20 spokes)
-- Routes: 35 entries, 34 distinct intents
-- Playbooks: P01-P15 (playbooks/)
+- Routes: 51 entries, 50 distinct intents
+- Playbooks: P01-P24 (24 playbooks) (playbooks/)
 - Layer stack: MANNERS.md → DISPATCHER_CORE.md → identity/ → DECISIONS.md
   (per agent) → playbooks/ → agent SKILL.md files
 - Track principle: the ROUTE-SPACE IS CLOSED. Agents run on predetermined
@@ -56,7 +56,7 @@ defect, not a change.
 - 18 Calendar & Task Management Agent
 - 19 Prospecting Agent
 - 20 Social Media Monitoring Agent
-- Intents: `asset.release`, `calendar.event`, `campaign.publish`, `clarification.request`, `client.message.request`, `client.message.send`, `config.update`, `content.review`, `content.verdict`, `data.package`, `data.request`, `date.trigger`, `deadline.alert`, `deliverable.release`, `doc.request`, `doc.status`, `escalation.*`, `integrity.violation`, `interaction.log`, `lead.captured`, `lead.nurture`, `lead.rescored`, `lead.signal`, `listing.change.authorized`, `listing.data`, `prospect.opportunity`, `record.request`, `record.response`, `report.package`, `showing.request`, `status.update`, `transaction.closed`, `vendor.request`, `vendor.schedule`
+- Intents: `agent.status`, `asset.release`, `behavioral.signal`, `calendar.event`, `campaign.publish`, `clarification.request`, `client.message.request`, `client.message.send`, `client.reply`, `compliance.notice`, `config.update`, `content.review`, `content.verdict`, `data.package`, `data.request`, `date.trigger`, `deadline.alert`, `deliverable.release`, `discovery.feed`, `doc.request`, `doc.status`, `document.submission`, `escalation.*`, `integrity.violation`, `interaction.log`, `lead.captured`, `lead.inbound`, `lead.nurture`, `lead.reply`, `lead.rescored`, `lead.signal`, `listing.change.authorized`, `listing.data`, `platform.metrics`, `prospect.opportunity`, `record.request`, `record.response`, `report.package`, `showing.feedback_response`, `showing.no_show`, `showing.request`, `social.mention`, `status.request`, `status.response`, `status.update`, `transaction.closed`, `vendor.cancellation_notice`, `vendor.event`, `vendor.request`, `vendor.schedule`
 
 ## Swarm-level decision tuples (predictable scenarios, pre-deliberated)
 - (two playbooks match one trigger, run neither; clarification.request naming both)
