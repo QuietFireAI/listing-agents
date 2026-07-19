@@ -1,5 +1,15 @@
 # Tuning Manual — listing-agents
 
+## Runtime & mount status (2026-07-19)
+
+| Item | Status |
+|---|---|
+| Listing runtime | **WORKING BUILD** - 20 spokes, 420 tests, all playbooks P01-P24 e2e (incl. the P01 new-listing lifecycle with photo/compliance/Clear-Cooperation gates). |
+| Live demo | `tools/run_demo.py` - one listing, six acts, real hub: signed authorization, fair-housing flag caught, go-live verified, pricing question escalated, chain verified. |
+| MCP mount | **WORKING** - `dispatcher/identity_mcp.py` (4-tool closed surface, boot conformance gate), proven by `tools/mcp_roundtrip.py` live stdio round trip. Mounts on Hermes/OpenClaw/Claude Desktop (docs/MOUNTING.md). Full live-host install not yet exercised; the MCP protocol is. |
+| Front door | `listing.authorize` (signed) runs P01; the host cannot route inside the swarm. |
+
+
 Every numeric/timing parameter in this codebase that a human might
 reasonably want to retune, in one place. Compiled by a direct code sweep
 (constructor signatures + inline threshold comparisons), not from memory —

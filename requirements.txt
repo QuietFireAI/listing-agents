@@ -22,3 +22,6 @@ before-turn @ git+https://github.com/QuietFireAI/before-turn.git
 pre-response-selfcheck @ git+https://github.com/QuietFireAI/pre-response-selfcheck.git
 sleep-marks @ git+https://github.com/QuietFireAI/sleep-marks.git
 splitvantage @ git+https://github.com/QuietFireAI/splitvantage.git
+
+# MCP wrapper (dispatcher/identity_mcp.py) - mounts on Hermes/OpenClaw/Claude Desktop
+mcp>=1.23.0
