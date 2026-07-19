@@ -1,0 +1,76 @@
+QuietFire Identity License (v0.1 - PENDING COUNSEL REVIEW)
+Copyright (c) 2026 QuietFireAI / Jeff Phillips. All rights reserved.
+
+============================================================================
+IMPORTANT: This file is a plain-language commercial license placed OVER a
+copyleft floor. It is deliberately protective and is a PLACEHOLDER pending
+review by qualified counsel; a reviewed license will replace it. Where this
+document and the AGPL-3.0 floor (see LICENSE-AGPL in this repository)
+conflict for a given use, the terms below govern the grant QuietFireAI
+offers; the AGPL floor governs only to the extent you rely on it instead of
+a commercial license from QuietFireAI.
+============================================================================
+
+WHAT THIS REPOSITORY IS
+    A domain-specific IDENTITY package: the wiring, routing (the closed
+    track), predeliberated decision tuples, playbooks, ratified
+    configuration doctrine, documentation, and (where present) reference
+    spoke implementations that give an AI agent swarm a governed operating
+    identity for a specific field. This is the value-bearing work. It is
+    NOT the open chassis it runs on (dispatcher-agents, Apache-2.0) and is
+    NOT licensed under the chassis's terms.
+
+DUAL LICENSING
+    This identity package is available under EITHER, at your election:
+
+    (A) The GNU Affero General Public License, Version 3 (LICENSE-AGPL).
+        If you use, modify, or run this package as a network service under
+        the AGPL, you must comply with ALL of its terms - including making
+        the complete corresponding source of your entire application,
+        including your modifications and anything that combines with this
+        package over a network, available to your users under the AGPL.
+        This is the free option, and its obligations are significant by
+        design.
+
+    (B) A commercial license from QuietFireAI, which lifts the AGPL's
+        copyleft obligations for paid production use. Contact QuietFireAI
+        for terms. The supported commercial operating environment is
+        TelsonBase.
+
+    QuietFireAI is the sole copyright holder of this work and reserves the
+    right to offer it under these and other terms.
+
+FREE-OF-CHARGE PERMITTED USE (no commercial license required)
+    You MAY, at no charge and without an AGPL obligation, for the purpose
+    of evaluating, understanding, and verifying this work:
+      - clone and read the entire repository;
+      - run the test suites and any provided demo (e.g. tools/run_demo.py);
+      - execute the package locally for evaluation, development, and
+        internal testing that is not production and not offered to any
+        third party.
+    This permission exists specifically so the work can be checked, not
+    just described. It grants nothing beyond evaluation.
+
+PRODUCTION AND COMMERCIAL USE (license required)
+    Any use of this package to process real business, clinical, financial,
+    or personal data; to provide a service to any third party; or in any
+    revenue-generating or production capacity REQUIRES either a commercial
+    license from QuietFireAI (B above) or full AGPL-3.0 compliance (A
+    above). There is no third free tier.
+
+PROHIBITED WITHOUT A WRITTEN COMMERCIAL LICENSE
+      - Redistributing this package or substantial portions of it, modified
+        or not, outside the AGPL's terms.
+      - Using this package's structure, tuples, playbooks, or doctrine to
+        build, generate, or sell a DERIVATIVE IDENTITY for a third party.
+      - Removing or obscuring provenance, authorship, or license notices.
+
+THE OPEN CHASSIS IS SEPARATE
+    This package is designed to run on dispatcher-agents, which is
+    Apache-2.0 and free for broad use. Nothing here restricts the chassis.
+    The identity is the licensed work; the chassis is not.
+
+NO WARRANTY
+    THIS WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. It has not
+    received licensed legal, regulatory, or domain-compliance review.
+    Deploying it in a regulated field is the deployer's responsibility.
