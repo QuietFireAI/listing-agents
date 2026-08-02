@@ -136,7 +136,12 @@ def main():
                                     "email": "yes"}}))
     v = s["09"].scheduled.get(ctx, {}).get("photography", {}).get("vendor_id")
     say(f"  photography ordered from vetted roster: {v}")
-    say(f"  vendor booking left the swarm: {ext_has('vendor.schedule')}")
+    vheld = any(e["kind"] == "absolute_signal.hold"
+                and e["intent"] == "vendor.schedule" for e in hub.audit.read())
+    say(f"  vendor booking (a COUNTERPARTY) auto-sent? {ext_has('vendor.schedule')}"
+        f"   <- False by design: held by the Absolute Signal ({vheld})")
+    say("  the roster PICK happened inside the swarm; reaching OUT to the "
+        "vendor waits for a human's release. Scheduling != disclosing.")
     hub.send(spoke_env("06", "11", "client.message.request", ctx,
                        {"template": "seller_onboarding", "hour": 10}))
     say(f"  seller onboarding message sent: {ext_has('client.message.send')}")
@@ -175,10 +180,35 @@ def main():
     say(f"  did the flagged phrase EVER reach a marketing release? {leaked}")
     say("  The gate is a hard stop: flagged copy cannot market. Period.")
 
-    act(4, "GO-LIVE -> MLS ACTIVE, CLEAR COOPERATION, CAMPAIGN PUBLISHED")
+    act(4, "GO-LIVE -> MLS ACTIVE, CLEAR COOPERATION, THE ABSOLUTE SIGNAL")
     su = {e["to_agent"] for e in seen("status.update")}
     say(f"  status.update(active) reached: {sorted(su)} (11/12/14 required)")
-    say(f"  MLS live-verified (not a push log) -> campaign published: "
+    # THE ABSOLUTE SIGNAL, live: the campaign is a PUBLIC send. It does not
+    # auto-publish - it HOLDS until a human authorizes THIS message.
+    held = [e for e in hub.audit.read()
+            if e["kind"] == "absolute_signal.hold"
+            and e["intent"] == "campaign.publish"]
+    say(f"  campaign to the PUBLIC held by the Absolute Signal: {bool(held)}"
+        f"  (audience={held[0]['audience'] if held else '-'})")
+    say(f"  auto-published without a human? {ext_has('campaign.publish')}"
+        f"   <- must be False: the signal holds it")
+    # the human key: a signed disclosure.authority naming the held campaign
+    n_released = 0
+    for hid in list(hub._absolute_holds.keys()):
+        h = hub._absolute_holds[hid]
+        if h.intent != "campaign.publish":
+            continue
+        auth = Envelope(from_agent="human", to_agent="12",
+                        intent="disclosure.authority",
+                        client_context_id=h.client_context_id,
+                        payload={"held_envelope_id": hid},
+                        provenance={"source": "human", "captured_at": "runtime",
+                                    "verbatim_available": True})
+        signer.sign(auth)
+        hub.release_disclosure(auth)
+        n_released += 1
+    say(f"  human signs a release for the campaign ({n_released} authorized)")
+    say(f"  NOW campaign published (after the human's key): "
         f"{ext_has('campaign.publish')}")
     feeds = any(e["to_agent"] == "13" and e["intent"] == "listing.data"
                 for e in seen("listing.data"))

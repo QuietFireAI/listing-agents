@@ -89,3 +89,6 @@ existing.
 | 2026-07-17 18:33:50 UTC | listing-agents | `6e62876e03` | Agent 02 review: verify prior fixes solid, close one real gap in tuple 6 |
 | 2026-07-17 18:41:00 UTC | listing-agents | *(this commit)* | Create PUSH_LOG.md, backfilled with every real commit from 2026-07-16 onward across all 4 in-scope repos |
 | 2026-07-17 18:48:00 UTC | listing-agents | *(this commit)* | Agent 03 review: fix 3 real gaps (tuples 2/6 missing client confirmations, tuple 7 zero-code legal-hours/holiday gate) |
+| 2026-08-02 01:12:33 UTC | dispatcher-agents | `0bafaa9` | ABSOLUTE SIGNAL: disclosure gate (hold counterparty/public) + signed release_disclosure path (Ed25519+registry+MFA) + canonical rebuttal + FINANCIAL_CAPABILITY.md; 125 tests pass |
+| 2026-08-02 01:12:33 UTC | listing-agents | `aeb9a3d` | ABSOLUTE SIGNAL: sync gate/release, tag 3 external routes with audience, MANNERS Manner 15, rewrite 12 tests to hold->release->complete contract; 420 tests pass |
+| 2026-08-02 01:12:33 UTC | listing-agents | *(this commit)* | Demo: Act 1 + Act 4 reframed to show gate hold -> human signed release -> publish (video-ready); repo docs |

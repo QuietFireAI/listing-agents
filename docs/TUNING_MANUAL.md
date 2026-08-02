@@ -245,3 +245,14 @@ If you add a new agent or a new threshold, add it to this table in the
 same commit — that's the whole point of keeping this centralized instead
 of scattered across code comments. A parameter not in this table is a
 parameter nobody outside the source code knows exists.
+
+---
+
+## ABSOLUTE SIGNAL — disclosure gate (added 2026-08-01)
+
+| Item | Where | Status | Notes |
+|---|---|---|---|
+| Route `audience` field | `identity/routes.json` (external routes) | **RATIFIED** | `principal` passes the gate; `counterparty`/`public` HOLD for human release. Missing/unknown → fail-closed to `counterparty`. |
+| `audience_verified` flag | `identity/routes.json` | **PER-ROUTE** | `false` = provisional classification, surfaced on the hold. All 3 listing external routes are verified `true`. |
+| Disclosure release intent | `disclosure.authority` | **CONSTANT** | Signed authority intent that clears exactly one held message. Reuses the execution-authority stack (Ed25519 sig + signer registry + MFA). No route entry needed (verified directly, re-sends the original). |
+| Canonical signal text | `dispatcher/absolute_signal.py` `SIGNAL_TEXT` | **SINGLE SOURCE** | MANNERS.md Manner 15 and docs/FINANCIAL_CAPABILITY.md defer to this. sha256-checked by tests + propagation_check.py. Never hand-edit downstream copies. |
