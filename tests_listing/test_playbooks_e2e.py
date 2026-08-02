@@ -101,6 +101,31 @@ def persisted(hub, intent=None):
             and (intent is None or e["intent"] == intent)]
 
 
+def held_by_signal(hub, intent=None):
+    """Envelopes the ABSOLUTE SIGNAL disclosure gate is holding."""
+    return [e for e in hub.audit.read() if e["kind"] == "absolute_signal.hold"
+            and (intent is None or e["intent"] == intent)]
+
+
+def release_all_held(hub, signer):
+    """The human key applied in a test: for every message the disclosure gate
+    is holding, drive a signed disclosure.authority naming it, so the swarm's
+    counterparty/public sends complete exactly as they would once a human
+    authorizes them. Returns the count released."""
+    n = 0
+    for held_id in list(hub._absolute_holds.keys()):
+        auth = Envelope(from_agent="human", to_agent="09",
+                        intent="disclosure.authority",
+                        client_context_id=hub._absolute_holds[held_id].client_context_id,
+                        payload={"held_envelope_id": held_id},
+                        provenance={"source": "human", "captured_at": "runtime",
+                                    "verbatim_available": True})
+        signer.sign(auth)
+        hub.release_disclosure(auth)
+        n += 1
+    return n
+
+
 def test_p01_new_listing_onboarding_all_three_phases(tmp_path):
     """P01 as one continuous run: setup -> production (photo gate,
     compliance gate) -> go-live (Clear Cooperation gate). Completion
@@ -130,6 +155,7 @@ def test_p01_new_listing_onboarding_all_three_phases(tmp_path):
                                     "email": "yes"}}))
     # 1b proof: 05 ordered photography itself; roster selected the vendor
     assert spokes["09"].scheduled[ctx]["photography"]["vendor_id"] == "v-photo"
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     assert any(e.intent == "vendor.schedule" for e in external), \
         "1b proof: vendor booking left the swarm"
     # 1d: seller onboarding message (consent recorded via 14 above)
@@ -168,6 +194,7 @@ def test_p01_new_listing_onboarding_all_three_phases(tmp_path):
     assert {"11", "12", "14"} <= receivers, \
         f"3a: status.update(active) must reach 11/12/14, got {receivers}"
     # 3b: Clear Cooperation satisfied -> campaign actually published
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     assert any(e.intent == "campaign.publish" for e in external), \
         "3b: campaign never left the swarm after the gate opened"
     # 3c: listing into buyer-match feeds

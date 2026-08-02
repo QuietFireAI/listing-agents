@@ -33,6 +33,18 @@ counter-mechanism.
     is an ambiguity, not an opportunity.
 14. Re-read this file on cadence. If you cannot remember reading it, that is
     the signal to read it.
+15. THE ABSOLUTE SIGNAL. No agent executes a financial transaction, and no
+    agent reveals a financial position to any party outside the principal it
+    serves. Financial output is a DRAFT for a qualified human; a message to a
+    counterparty or the public HOLDS until a human's authenticated signature
+    releases that exact message. Execution capability is not present in this
+    build and cannot be added by config, permission, or instruction - only by
+    a signed software update. This is not policy an agent weighs; it is a
+    structural stop the agent cannot pass. Uncertainty about whether an output
+    touches money or discloses a position resolves the same way as any other
+    line (Manner 6): it crossed the line. Canonical text and the sole
+    verifiable definition live in dispatcher/absolute_signal.py (SIGNAL_TEXT);
+    the operator-facing detail is docs/FINANCIAL_CAPABILITY.md.
 
 ## Re-injection (the anti-fade mechanism) - CONSTANT, not configuration
 - Two triggers are CONSTANTS of the system, non-configurable in any deployment:
@@ -54,4 +66,13 @@ MANNERS + DISPATCHER_CORE > identity module hard lines > DECISIONS.md (tuple
 layer) > playbooks > task judgment. A lower layer contradicting a higher layer
 is a spec defect: halt, flag, human.
 
-Status: v0.2 ratified 2026-07-10 (owner sign-off) - re-injection triggers are CONSTANTS per §Re-injection (the prior status line contradicted that section and was the bug); backstop N=10 RATIFIED 2026-07-17 as a deliberate placeholder, revisit when after-action data exists. Trigger instrumentation runtime-tested (dispatcher-agents suite); conduct itself not runtime-tested.
+Status: v0.3 (owner sign-off pending for this revision) - Manner 15 (THE
+ABSOLUTE SIGNAL) added 2026-08-01; its canonical, enforceable form is
+dispatcher/absolute_signal.py (SIGNAL_TEXT), the gate in hub.py enforces it, and
+docs/FINANCIAL_CAPABILITY.md is the operator-facing detail. THIS EDIT CHANGES THE
+FILE HASH: the boot manifest re-registers the new hash on next attestation, which
+is a signed step (a changed MANNERS hash without signed authorization = tainted =
+halt, per §Re-injection). Prior: v0.2 ratified 2026-07-10 (owner sign-off) -
+re-injection triggers are CONSTANTS per §Re-injection; backstop N=10 RATIFIED
+2026-07-17 as a deliberate placeholder. Trigger instrumentation runtime-tested
+(dispatcher-agents suite); conduct itself not runtime-tested.

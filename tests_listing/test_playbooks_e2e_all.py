@@ -22,6 +22,7 @@ from dispatcher.listing_spokes_03 import Spoke03LeadNurture
 from dispatcher.listing_spokes_19 import Spoke19Prospecting
 from dispatcher.listing_spokes_20 import Spoke20SocialMediaMonitoring
 from test_playbooks_e2e import (build_swarm, signed, spoke_env, persisted,
+                                release_all_held,
                                 RULESET)
 
 
@@ -160,6 +161,7 @@ def test_p05_expired_withdrawn_winddown(tmp_path):
     ctx = "p05"
     _new_listing(hub, signer, ctx)
     # a live campaign exists (so the halt is real, not vacuous)
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     n_publish_before = sum(1 for e in external
                            if e.intent == "campaign.publish")
     assert n_publish_before >= 1, "precondition: campaign never launched"
@@ -171,6 +173,7 @@ def test_p05_expired_withdrawn_winddown(tmp_path):
     status_updates = [e for e in persisted(hub, "status.update")
                       if e["payload"].get("status") == "withdrawn"]
     assert status_updates, "1a: withdrawn status never propagated"
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     halts = [e for e in external if e.intent == "campaign.publish"
              and e.payload.get("action") in ("halt", "pause", "retract")]
     assert halts, "1b: marketing halt never left the swarm"
@@ -270,6 +273,7 @@ def test_p09_contract_to_close_deadline_engine(tmp_path):
     # 3: inspector scheduled through the roster
     hub.send(spoke_env("07", "09", "vendor.request", ctx,
                        {"kind": "photography", "today": "2026-07-10"}))
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     assert any(e.intent == "vendor.schedule" for e in external)
     # 2: milestone doc requested; 4: report collected verified-opens
     hub.send(spoke_env("07", "08", "doc.request", ctx,
@@ -379,6 +383,7 @@ def test_p12_geographic_farm_campaign(tmp_path):
                                       "body": "market update",
                                       "special_ad_category": "housing"},
                      "today": "2026-07-11"}))
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     pubs = [e for e in external if e.intent == "campaign.publish"
             and e.client_context_id == ctx]
     assert pubs, "2b: farm campaign never published"
@@ -555,6 +560,7 @@ def test_p20_vacant_property_watch_cycle(tmp_path):
     ctx = "p20"
     hub.send(spoke_env("07", "09", "vendor.request", ctx,
                        {"kind": "photography", "today": "2026-07-10"}))
+    release_all_held(hub, signer)  # gated external sends held; human authorizes
     assert any(e.intent == "vendor.schedule" for e in external)
     # completion claimed WITHOUT proof -> nothing releases (tuple 8)
     hub.send(spoke_env("external", "09", "vendor.event", ctx,

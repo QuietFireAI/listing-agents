@@ -186,7 +186,9 @@
       ],
       "receivers": [
         "external"
-      ]
+      ],
+      "audience": "principal",
+      "audience_verified": true
     },
     {
       "intent": "deadline.alert",
@@ -345,7 +347,9 @@
       ],
       "receivers": [
         "external"
-      ]
+      ],
+      "audience": "counterparty",
+      "audience_verified": true
     },
     {
       "intent": "campaign.publish",
@@ -354,7 +358,9 @@
       ],
       "receivers": [
         "external"
-      ]
+      ],
+      "audience": "public",
+      "audience_verified": true
     },
     {
       "intent": "escalation.*",

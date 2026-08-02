@@ -64,6 +64,27 @@ def persisted(hub, intent=None):
     return [e for e in events if intent is None or e["intent"] == intent]
 
 
+def release_all_held(hub, signer):
+    """Apply the human key to every message the ABSOLUTE SIGNAL disclosure gate
+    is holding: a signed disclosure.authority naming each held id, so the
+    swarm's counterparty/public sends complete as they would once a human
+    authorizes. campaign.publish is `public` and now holds by design; this is
+    the authorized-release step that lets it through."""
+    n = 0
+    for held_id in list(hub._absolute_holds.keys()):
+        held = hub._absolute_holds[held_id]
+        auth = Envelope(from_agent="human", to_agent="12",
+                        intent="disclosure.authority",
+                        client_context_id=held.client_context_id,
+                        payload={"held_envelope_id": held_id},
+                        provenance={"source": "human", "captured_at": "runtime",
+                                    "verbatim_available": True})
+        signer.sign(auth)
+        hub.release_disclosure(auth)
+        n += 1
+    return n
+
+
 def test_asset_without_mls_confirmation_holds_ccp_gate(tmp_path):
     hub, signer = make_hub(str(tmp_path))
     Spoke12MarketingCampaign(hub)
@@ -78,6 +99,7 @@ def test_asset_with_mls_confirmed_publishes(tmp_path):
     hub.on_turn_start()
     hub.send(status_update("m-002", "active"))
     hub.send(asset_release("m-002", {"draft": {"facts": []}}))
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     pub = persisted(hub, "campaign.publish")
     assert pub and pub[0]["to_agent"] == "external"
 
@@ -89,6 +111,7 @@ def test_exempt_status_with_disclosure_clears_gate(tmp_path):
     hub.send(config_update(signer, "m-003", {"exempt_status": {"exempt": True,
                                                         "disclosure_on_file": True}}))
     hub.send(asset_release("m-003", {"draft": {"facts": []}}))
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     assert persisted(hub, "campaign.publish")
 
 
@@ -138,6 +161,7 @@ def test_approved_verdict_publishes_only_with_ccp_clear(tmp_path):
     hub.send(status_update("m-008", "active"))
     hub.send(config_update(signer, "m-008", {"new_campaign": {"body": "newsletter text"}}))
     hub.send(verdict("m-008", {"verdict": "approved"}))
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     pub = persisted(hub, "campaign.publish")
     assert pub and pub[0]["payload"]["source"] == "self_written"
 
@@ -237,6 +261,7 @@ def test_stale_asset_retraction_actually_pulls_it_down(tmp_path):
     assert spoke.published["m-016"].get("retracted") is True
     assert spoke.published["m-016"]["verdict_locked"] is True, \
         "a retraction isn't a correction - verdict_locked should be untouched"
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     publishes = persisted(hub, "campaign.publish")
     assert any(p["payload"].get("action") == "retract" for p in publishes)
     logs = persisted(hub, "interaction.log")
@@ -256,6 +281,7 @@ def test_REGRESSION_approved_campaign_publishes_once_gate_clears_later(tmp_path)
     assert "m-016" in spoke.approved_awaiting_ccp
 
     hub.send(status_update("m-016", "active"))
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     pub = persisted(hub, "campaign.publish")
     assert pub and pub[0]["payload"]["source"] == "self_written"
     assert "m-016" not in spoke.approved_awaiting_ccp
@@ -271,6 +297,7 @@ def test_REGRESSION_asset_from_04_publishes_once_gate_clears_later(tmp_path):
 
     hub.send(config_update(signer, "m-017", {"exempt_status": {
         "exempt": True, "disclosure_on_file": True}}))
+    release_all_held(hub, signer)  # public campaign holds; human authorizes
     pub = persisted(hub, "campaign.publish")
     assert pub and pub[0]["payload"]["source"] == "04_asset"
 

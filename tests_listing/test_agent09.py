@@ -48,8 +48,15 @@ def test_roster_vendor_current_credentials_schedules(tmp_path):
     hub.send(vendor_req("v-001", {"vendor_id": "insp-1", "kind": "inspector",
                                   "today": "2026-08-01"}))
     assert spoke.scheduled["v-001"]["inspector"]["confirmed"] is True
-    sched = persisted(hub, "vendor.schedule")
-    assert sched and sched[0]["to_agent"] == "external"
+    # vendor.schedule is `counterparty` under the ABSOLUTE SIGNAL: it now HOLDS
+    # for human authorization instead of auto-reaching external. The scheduling
+    # decision still happened (confirmed above); the outbound send is gated.
+    held = [e for e in hub.audit.read()
+            if e["kind"] == "absolute_signal.hold"
+            and e["intent"] == "vendor.schedule"]
+    assert held and held[0]["audience"] == "counterparty"
+    # and it did NOT silently reach external
+    assert not persisted(hub, "vendor.schedule")
 
 
 def test_off_roster_vendor_refused_never_scheduled(tmp_path):
