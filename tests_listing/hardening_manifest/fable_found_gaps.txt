@@ -1,0 +1,11 @@
+# Gaps the ORIGINAL 105-mutation sweep did NOT cover, surfaced by the Fable 5
+# CrossPol re-verification and independently re-verified + closed. NOT part of
+# the original contract; documented here so the record is complete.
+listing_spokes_18.py:228 [cmp] e["event_id"] == block_id -> != (MY FALSE "equivalent mutant" — actually killable; foreign-event-first input)
+listing_spokes_06.py:83  [cmp] w in low -> not in            (access/lockbox legal-line detection)
+listing_spokes_06.py:333 [bool] protected_deadline default False -> True (fail-closed bump gate)
+listing_spokes_11.py:139 [bool] return False -> True          (unresolved template var: false "sent")
+listing_spokes.py:180    [cmp] val == "no" -> !=              (consent most-restrictive-wins)
+listing_spokes.py:180    [cmp] current[channel] == "unknown" -> != (consent unknown-overwrite)
+listing_spokes.py:323    [bool] identity_verified.get(ctx, False) -> True (record.response fail-closed)
+listing_spokes.py:573    [cmp] preapproval not in (yes,no,unknown) -> in (whitelist)

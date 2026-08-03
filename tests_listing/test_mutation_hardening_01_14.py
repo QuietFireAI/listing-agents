@@ -166,3 +166,86 @@ def test_14_merge_candidates_need_contact_value(tmp_path):
         "two contexts sharing a contact value must be flagged to merge"
     assert "m3" not in text, \
         "a contact with no value must not be grouped (kills the guard flip)"
+
+
+# ============================================================================
+# 01/14 territory the ORIGINAL 105-mutation sweep never covered (its SPOKES
+# list excluded listing_spokes.py). Surfaced by the Fable 5 CrossPol as
+# full-suite survivors. Independently re-verified as real + uncovered before
+# closing. Each kill-verified against its exact mutation.
+#   180  _update_consent most-restrictive-wins: `val == "no"` and
+#        `current[channel] == "unknown"`
+#   323  record.response fail-closed `identity_verified.get(ctx, False)`
+#   573  preapproval whitelist `not in (yes,no,unknown)` -> unknown
+# ============================================================================
+
+def _spoke14(tmp_path):
+    hub, _ = make_hub(str(tmp_path))
+    return Spoke14CRMPipeline(hub), hub
+
+
+def test_14_consent_no_always_applies_over_yes(tmp_path):
+    """_update_consent: a 'no' is most-restrictive and always applies, even
+    over an existing 'yes'. Kills the 180 `val == "no"` flip."""
+    s, _ = _spoke14(str(tmp_path))
+    s.consent["c-1"] = {"text": "yes"}
+    s._update_consent("c-1", {"text": "no"})
+    assert s.consent["c-1"]["text"] == "no", \
+        "a 'no' must override an existing 'yes' (most restrictive wins)"
+
+
+def test_14_consent_unknown_is_overwritten(tmp_path):
+    """_update_consent: an 'unknown' channel accepts a new value. Kills the
+    180 `current[channel] == "unknown"` flip."""
+    s, _ = _spoke14(str(tmp_path))
+    s.consent["c-2"] = {"email": "unknown"}
+    s._update_consent("c-2", {"email": "yes"})
+    assert s.consent["c-2"]["email"] == "yes", \
+        "an 'unknown' channel must accept the new value (kills the flip)"
+
+
+def test_14_record_response_identity_flag_fails_closed(tmp_path):
+    """record.request -> record.response carries requester_identity_verified,
+    defaulting False for a ctx with none set. Kills the 323 default flip."""
+    s, hub = _spoke14(str(tmp_path))
+    hub.on_turn_start()
+    hub.send(Envelope(from_agent="13", to_agent="14", intent="record.request",
+                      client_context_id="rr-1", payload={},
+                      provenance={"source": "t"}))
+    resp = [e for e in persisted(hub, "record.response")
+            if e["client_context_id"] == "rr-1"]
+    assert resp and resp[0]["payload"]["requester_identity_verified"] is False, \
+        "an unknown ctx must report identity NOT verified (fail closed)"
+
+    s.identity_verified["rr-2"] = True
+    hub.send(Envelope(from_agent="13", to_agent="14", intent="record.request",
+                      client_context_id="rr-2", payload={},
+                      provenance={"source": "t"}))
+    resp2 = [e for e in persisted(hub, "record.response")
+             if e["client_context_id"] == "rr-2"]
+    assert resp2 and resp2[0]["payload"]["requester_identity_verified"] is True
+
+
+def test_01_preapproval_outside_whitelist_becomes_unknown(tmp_path):
+    """Lead capture: a preapproval_status outside (yes,no,unknown) is forced
+    to 'unknown', never inferred. Kills the 573 whitelist flip."""
+    hub, _ = make_hub(str(tmp_path))
+    s = Spoke01LeadCapture(hub, brokerage_scope={"123 Main"})
+    hub.on_turn_start()
+    hub.send(Envelope(from_agent="external", to_agent="01",
+                      intent="lead.inbound", client_context_id="pa-1",
+                      payload={"channel": "email",
+                               "address_or_listing": "123 Main",
+                               "preapproval_status": "definitely_approved_trust_me"},
+                      provenance={"source": "external"}))
+    assert s.pending["pa-1"]["preapproval_status"] == "unknown", \
+        "an out-of-whitelist preapproval must be forced to 'unknown'"
+
+    hub.send(Envelope(from_agent="external", to_agent="01",
+                      intent="lead.inbound", client_context_id="pa-2",
+                      payload={"channel": "email",
+                               "address_or_listing": "123 Main",
+                               "preapproval_status": "yes"},
+                      provenance={"source": "external"}))
+    assert s.pending["pa-2"]["preapproval_status"] == "yes", \
+        "a valid preapproval status must pass through unchanged"

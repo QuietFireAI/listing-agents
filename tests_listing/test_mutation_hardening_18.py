@@ -93,22 +93,32 @@ def test_18_deadline_block_created_once_and_protected(tmp_path):
     assert blk[0]["protected"] is True, \
         "the created deadline block must be protected (kills the 230 flip)"
 
-    # NOTE on 228 (`e["event_id"] == block_id` dedup): flipping this to `!=`
-    # is an EQUIVALENT MUTANT for all reachable inputs — the idempotent
-    # protected_blocks[block_id] dict assignment plus the list-dedup outcome
-    # converge to the same single block whether the guard reads == or !=.
-    # It cannot be killed by any test because it does not change behavior.
-    # This assertion stands as a regression guard on the dedup INTENT, not as
-    # a mutation kill.
-    other = Envelope(from_agent="06", to_agent="18", intent="calendar.event",
-                     client_context_id="dl-1",
-                     payload={"day": "2026-08-20", "event_id": "other-evt",
-                              "protected": False, "timezone_confirmed": True,
-                              "time": "09:00"},
-                     provenance={"source": "t"})
-    s.hub.send(other)
-    s.hub.send(da)  # repeat the deadline with a foreign event already present
-    day_events = s.calendar.get("2026-08-20", [])
-    blk = [e for e in day_events if e["event_id"] == bid]
-    assert len(blk) == 1, \
-        "a repeated deadline must NOT create a duplicate block (dedup intent)"
+    # 228 (`e["event_id"] == block_id` guard): I ORIGINALLY and WRONGLY marked
+    # this an equivalent mutant. It is NOT. The block-creation (both the
+    # calendar append AND the protected_blocks assignment) lives INSIDE this
+    # guard. If a foreign event is already on the deadline day when the 07
+    # alert arrives, flipping == to != makes `any(...)` True, so `not any` is
+    # False, and the protected deadline block is NEVER created. Distinguishing
+    # input: seed an unrelated event on the day FIRST, then send the alert.
+    # (Credit: Fable 5 CrossPol caught my false equivalent-mutant claim.)
+    s2 = spoke(str(tmp_path) + "_foreign_first")
+    s2.hub.on_turn_start()
+    foreign = Envelope(from_agent="06", to_agent="18", intent="calendar.event",
+                       client_context_id="dl-2",
+                       payload={"day": "2026-08-21", "event_id": "other-evt",
+                                "protected": False, "timezone_confirmed": True,
+                                "time": "09:00"},
+                       provenance={"source": "t"})
+    s2.hub.send(foreign)   # foreign event present BEFORE the deadline alert
+    da2 = Envelope(from_agent="07", to_agent="18", intent="deadline.alert",
+                   client_context_id="dl-2",
+                   payload={"milestone": "financing", "deadline": "2026-08-21"},
+                   provenance={"source": "t"})
+    s2.hub.send(da2)
+    bid2 = "deadline-dl-2-financing"
+    assert bid2 in s2.protected_blocks, \
+        "the protected deadline block MUST be created even when a foreign " \
+        "event is already on the day (kills the 228 == -> != flip)"
+    assert any(e["event_id"] == bid2
+               for e in s2.calendar.get("2026-08-21", [])), \
+        "the protected block must appear on the calendar day"

@@ -66,8 +66,8 @@ def test_09_no_show_criticality_defaults_critical(tmp_path):
                     {"event_kind": "no_show", "deadline_critical": False}))
     logs = [e for e in persisted(s.hub, "interaction.log")
             if e["payload"].get("kind") == "vendor_no_show"]
-    assert logs, \
-        "an explicit non-critical no-show is logged"
+    assert logs and logs[0]["payload"]["deadline_critical"] is False, \
+        "an explicit non-critical no-show logs deadline_critical=False"
 
     # absent -> defaults critical -> escalates, no non-critical log
     s2 = spoke(str(tmp_path) + "_b")
